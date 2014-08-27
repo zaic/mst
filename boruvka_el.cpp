@@ -52,7 +52,7 @@ bool doAll() {
             vid_t icomp = comp[i];
             result[icomp] = make_pair(MAX_WEIGHT + 0.1, 0);
         }
-#else
+#elif 0
         for (vid_t i = 0; i < vertexCount; ++i) {
             result[i].weight = MAX_WEIGHT + 0.1;
         }
@@ -76,8 +76,11 @@ bool doAll() {
 #pragma omp parallel for reduction(+:updated)
     for (vid_t i = 0; i < vertexCount; ++i) {
         Result best{MAX_WEIGHT + 0.1, 0, 0, 0};
-        for (int j = 0; j < threadsCount; ++j) {
-            best = min(best, localResult[j][i]); // !
+        if (comp[i] == i) {
+            for (int j = 0; j < threadsCount; ++j) {
+                best = min(best, localResult[j][i]); // !
+                localResult[j][i].weight = MAX_WEIGHT + 0.1;
+            }
         }
         bestResult[i] = best;
         if (best.weight <= MAX_WEIGHT) {
