@@ -1,5 +1,5 @@
 #if 0
-CXX=g++
+CXX=icpc
 CXXFLAGS=-O3 -g -march=native -std=c++11 -Wall -Wextra -Wshadow -Wno-unused-result
 #CXXFLAGS=-O0 -g -std=c++11 -Wall -Wextra -Wshadow -Wno-unused-result
 EXE=gen_simple.out gen_cube.out reference.out boruvka_simple.out boruvka_el.out boruvka_el_seq.out

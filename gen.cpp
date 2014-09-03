@@ -15,7 +15,7 @@ bool EdgeDestCmp::operator()(const Edge& a, const Edge& b) const {
 }
 
 bool EdgeWeightCmp::operator()(const Edge& a, const Edge& b) const {
-    return std::make_pair(a.weight, a.dest) < std::make_pair(b.weight, b.dest);
+    return a.weight < b.weight;
 }
 
 void readAll(char *filename) {

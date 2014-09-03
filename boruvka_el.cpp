@@ -25,6 +25,7 @@ weight_t taskResult;
 
 int threadsCount;
 vid_t *vertexIds;
+eid_t *startEdgesIds;
 
 struct Result {
     weight_t weight;
@@ -59,13 +60,19 @@ bool doAll() {
 #endif
         for (vid_t v = vertexIds[threadId]; v < vertexIds[threadId + 1]; ++v) {
             const vid_t cv = comp[v];
-            for (eid_t e = edgesIds[v]; e < edgesIds[v + 1]; ++e) {
-                if (edges[e].weight > result[cv].weight) continue;
+            weight_t startWeight = edges[startEdgesIds[v]].weight;
+            for (eid_t e = startEdgesIds[v]; e < edgesIds[v + 1]; ++e) {
+                weight_t weight = edges[e].weight;
+                if (weight > result[cv].weight) break;
                 const vid_t u = edges[e].dest;
                 const vid_t cu = comp[u];
                 if (cu == cv) continue;
-                if (edges[e].weight < result[cv].weight || (edges[e].weight == result[cv].weight && cu < result[cv].destComp)) {
+                if (weight < result[cv].weight || (weight == result[cv].weight && cu < result[cv].destComp)) {
                     result[cv] = Result{edges[e].weight, cu, v, u};
+                }
+                if (weight > startWeight) {
+                    startWeight = weight;
+                    startEdgesIds[v] = e;
                 }
             }
         }
@@ -145,6 +152,7 @@ void doPrepare() {
         comp[i] = i;
 
     bestResult = new Result[vertexCount];
+    startEdgesIds = new eid_t[vertexCount];
 
 #pragma omp parallel
     {
@@ -170,6 +178,13 @@ void doPrepare() {
         localResult[threadId] = new Result[vertexCount];
         for (vid_t i = 0; i < vertexCount; ++i)
             localResult[threadId][i] = Result{MAX_WEIGHT + 0.1, 0, 0, 0};
+
+        for (vid_t i = vertexIds[threadId]; i < vertexIds[threadId + 1]; ++i) {
+            sort(edges + edgesIds[i], edges + edgesIds[i + 1], EdgeWeightCmp());
+            startEdgesIds[i] = edgesIds[i];
+        }
+
+        E(threadId); Eo(vertexIds[threadId + 1]);
     }
 }
 
