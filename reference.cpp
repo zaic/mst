@@ -40,6 +40,8 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     readAll(argv[1]);
+
+    int64_t prepareTime = -currentNanoTime();
     vector<BiEdge> es;
     for (vid_t v = 0; v < vertexCount; ++v) {
         for (eid_t i = edgesIds[v]; i < edgesIds[v + 1]; ++i) {
@@ -49,6 +51,9 @@ int main(int argc, char *argv[]) {
             es.push_back(BiEdge{v, u, w});
         }
     }
+    prepareTime += currentNanoTime();
+
+    int64_t calcTime = -currentNanoTime();
     sort(es.begin(), es.end());
 
     weight_t result = 0.0;
@@ -61,8 +66,10 @@ int main(int argc, char *argv[]) {
             snm.merge(cv, cu);
         }
     }
+    calcTime += currentNanoTime();
     
     printf("%.10lf\n", double(result));
+    fprintf(stderr, "%.3lf\n%.3lf\n", double(prepareTime) / 1e9, double(calcTime) / 1e9);
 
     return 0;
 }

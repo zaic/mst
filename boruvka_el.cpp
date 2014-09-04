@@ -184,7 +184,7 @@ void doPrepare() {
             startEdgesIds[i] = edgesIds[i];
         }
 
-        E(threadId); Eo(vertexIds[threadId + 1]);
+        //E(threadId); Eo(vertexIds[threadId + 1]);
     }
 }
 
@@ -196,10 +196,17 @@ int main(int argc, char *argv[]) {
     }
     readAll(argv[1]);
 
+    int64_t prepareTime = -currentNanoTime();
     doPrepare();
+    prepareTime += currentNanoTime();
+
+    int64_t calcTime = -currentNanoTime();
     while (doAll());
+    calcTime += currentNanoTime();
 
     printf("%.10lf\n", double(taskResult));
+
+    fprintf(stderr, "%.3lf\n%.3lf\n", double(prepareTime) / 1e9, double(calcTime) / 1e9);
 
     return 0;
 }
