@@ -1,6 +1,7 @@
 #include "gen.h"
 #include <cassert>
 #include <cstdio>
+#include <time.h>
 
 const weight_t MAX_WEIGHT = 1.0;
 
@@ -32,4 +33,10 @@ void readAll(char *filename) {
     fread(edges, sizeof(Edge), edgesCount, f);
 
     fclose(f);
+}
+
+int64_t currentNanoTime() {
+    timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return int64_t(ts.tv_sec) * int64_t(1e9) + ts.tv_nsec;
 }

@@ -24,3 +24,5 @@ extern Edge *edges;
 extern const weight_t MAX_WEIGHT;
 
 void readAll(char *filename);
+
+int64_t currentNanoTime();
