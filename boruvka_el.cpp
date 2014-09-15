@@ -47,10 +47,17 @@ double times[kMaxThreads][kMaxIterations][40];
 
 
 bool doAll() {
-    // find min
+    int updated = 0; // reduce stage 
+    weight_t tmpTaskResult = 0.0; // merge stage
+
 #pragma omp parallel
     {
         const int threadId = omp_get_thread_num();
+        stickThisThreadToCore(threadId);
+
+        //
+        // find min
+        // 
         rdtsc.start(threadId);
         auto result = localResult[threadId];
 
@@ -83,13 +90,12 @@ bool doAll() {
             }
         }
         times[iterationNumber][threadId][0] = rdtsc.end(threadId);
-    }
 
-    // reduce min
-    int updated = 0;
-#pragma omp parallel
-    {
-        const int threadId = omp_get_thread_num();
+#pragma omp barrier
+
+        //
+        // reduce min
+        //
         rdtsc.start(threadId);
 #pragma omp for reduction(+:updated) nowait
         for (vid_t i = 0; i < vertexCount; ++i) {
@@ -107,14 +113,13 @@ bool doAll() {
             }
         }
         times[iterationNumber][threadId][1] = rdtsc.end(threadId);
-    }
-    if (!updated) return false;
+        // if (!updated) return false; TODO
 
-    // merge components
-    weight_t tmpTaskResult = 0.0;
-#pragma omp parallel
-    {
-        const int threadId = omp_get_thread_num();
+#pragma omp barrier
+
+        //
+        // merge components
+        //
         rdtsc.start(threadId);
 #pragma omp for reduction(+:tmpTaskResult) nowait
         for (vid_t i = 0; i < vertexCount; ++i) {
@@ -136,7 +141,6 @@ bool doAll() {
         }
         times[iterationNumber][threadId][2] = rdtsc.end(threadId);
     }
-    taskResult += tmpTaskResult;
 
     // pointer jumping
     int changed = 100500;
@@ -165,8 +169,9 @@ bool doAll() {
 
     // TODO reduce edges?
 
+    taskResult += tmpTaskResult;
     ++iterationNumber;
-    return true;
+    return updated;
 }
 
 void doPrepare() {
