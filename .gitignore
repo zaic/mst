@@ -20,7 +20,12 @@
 *.out
 *.app
 
-
-
 # Input Data
 *.bin
+rmat*
+
+# Vim files
+.*.sw[p-z]
+
+# Temporary trash
+src.tar.bz2
