@@ -26,7 +26,7 @@ extern const weight_t MAX_WEIGHT;
 void readAll(char *filename);
 
 int64_t currentNanoTime();
-void stickThisThreadToCore(int coreId);
+int stickThisThreadToCore(int coreId);
 
 struct RDTSC {
     double timers[1024][64];

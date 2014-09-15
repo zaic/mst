@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <time.h>
 #include <unistd.h>
+#include <pthread.h>
 
 const weight_t MAX_WEIGHT = 1.0;
 
@@ -79,3 +80,15 @@ double RDTSC::end(int timerId) {
 }
 
 RDTSC rdtsc;
+
+int stickThisThreadToCore(int coreId) {
+int num_cores = sysconf(_SC_NPROCESSORS_ONLN);
+   if (coreId >= num_cores) return 0;
+
+   cpu_set_t cpuset;
+   CPU_ZERO(&cpuset);
+   CPU_SET(coreId, &cpuset);
+
+   pthread_t current_thread = pthread_self();
+   return pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset);
+}
