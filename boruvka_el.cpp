@@ -219,6 +219,20 @@ void doPrepare() {
     }
 }
 
+void warmup() {
+    const int64_t iterationCount = 1e9;
+#pragma omp parallel
+    {
+        volatile int64_t fpre = 0, fcur = 1;
+        stickThisThreadToCore(omp_get_thread_num());
+        for (int64_t i = iterationCount; i > 0; --i) {
+            int64_t fnext = fpre + fcur;
+            fpre = fcur;
+            fcur = fnext;
+        }
+    }
+}
+
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
@@ -226,6 +240,8 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     readAll(argv[1]);
+    warmup();
+    fprintf(stderr, "Done\n");
 
     int64_t prepareTime = -currentNanoTime();
     doPrepare();
