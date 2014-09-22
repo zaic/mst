@@ -1,5 +1,5 @@
 #!/bin/sh
 
-rm -f src.tar.bz2
-tar cjf src.tar.bz2 *.cpp *.h
-scp src.tar.bz2 xeonphi:./z/mst
+rm -f src.tar.xz
+tar cJf src.tar.xz *.cpp *.h
+scp src.tar.xz xeonphi:./z/mst
