@@ -107,6 +107,7 @@ bool doAll() {
         // reduce min
         //
         rdtsc.start(threadId);
+#if 0
 #pragma omp for reduction(+:updated) nowait
         for (vid_t i = 0; i < vertexCount; ++i) {
             if (comp[i] == i) {
@@ -124,6 +125,52 @@ bool doAll() {
                 //bestResult[i].weight = MAX_WEIGHT + 0.1;
             }
         }
+#else
+        for (int treeIteration = 0; (1 << treeIteration) < threadsCount; treeIteration++) {
+            const int reduceTo = ((threadId >> (treeIteration + 1)) << (treeIteration + 1));
+            const int reduceFrom = reduceTo + (1 << treeIteration);
+            const int threadsPerComp = (1 << (treeIteration + 1));
+            const vid_t reduceStartComp = int64_t(vertexCount) * (threadId & ((1 << (treeIteration + 1)) - 1)) / threadsPerComp;
+            vid_t reduceEndCompPre = int64_t(vertexCount) * ((threadId + 1) & ((1 << (treeIteration + 1)) - 1)) / threadsPerComp;
+            const vid_t reduceEndComp = (reduceEndCompPre == 0 ? vertexCount : reduceEndCompPre);
+
+#if 0
+#pragma omp master
+            {
+                E("==================");
+                Eo(treeIteration);
+            }
+#pragma omp barrier
+#pragma omp critical
+            {
+                E(threadId); 
+                E(reduceStartComp); E(reduceEndComp);
+                E(reduceTo); Eo(reduceFrom);
+            }
+#endif
+
+            for (vid_t i = reduceStartComp; i < reduceEndComp; ++i) {
+                if (comp[i] == i) {
+                    if (localResult[reduceFrom][i] < localResult[reduceTo][i])
+                        localResult[reduceTo][i] = localResult[reduceFrom][i];
+                    localResult[reduceFrom][i].weight = MAX_WEIGHT + 0.1;
+                }
+            }
+#pragma omp barrier
+        }
+
+#pragma omp for reduction(+:updated) nowait
+        for (vid_t i = 0; i < vertexCount; ++i) {
+            if (comp[i] == i) {
+                bestResult[i] = localResult[0][i];
+                if (localResult[0][i].weight <= MAX_WEIGHT) {
+                    comp[i] = localResult[0][i].destComp;
+                    updated = 1;
+                }
+                localResult[0][i].weight = MAX_WEIGHT + 0.1;
+            }
+        }
+#endif
         times[iterationNumber][threadId][1] = rdtsc.end(threadId);
         // if (!updated) return false; TODO
 
