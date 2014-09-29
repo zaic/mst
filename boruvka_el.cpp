@@ -72,19 +72,22 @@ bool doAll() {
         }
 #endif
         for (vid_t v = vertexIds[threadId]; v < vertexIds[threadId + 1]; ++v) {
-            const vid_t cv = comp[v];
             const eid_t edgesStart = startEdgesIds[v];
             const eid_t edgesEnd = edgesIds[v + 1];
+            if (edgesStart >= edgesEnd) continue;
             
-            weight_t startWeight = (edgesStart < edgesEnd ? edges[edgesStart].weight : 0);
+            const vid_t cv = comp[v];
+            weight_t startWeight = edges[edgesStart].weight;
             eid_t newEdgesStart = edgesStart;
 
             for (eid_t e = edgesStart; e < edgesEnd; ++e) {
                 weight_t weight = edges[e].weight;
                 if (weight > result[cv].weight) break;
+
                 const vid_t u = edges[e].dest;
                 const vid_t cu = comp[u];
                 if (cu == cv) continue;
+
                 if (weight < result[cv].weight || (weight == result[cv].weight && cu < result[cv].destComp)) {
                     result[cv] = Result{edges[e].weight, cu, v, u};
                 }
@@ -106,17 +109,19 @@ bool doAll() {
         rdtsc.start(threadId);
 #pragma omp for reduction(+:updated) nowait
         for (vid_t i = 0; i < vertexCount; ++i) {
-            Result best{MAX_WEIGHT + 0.1, 0, 0, 0};
             if (comp[i] == i) {
+                Result best{MAX_WEIGHT + 0.1, 0, 0, 0};
                 for (int j = 0; j < threadsCount; ++j) {
                     best = min(best, localResult[j][i]); // !
                     localResult[j][i].weight = MAX_WEIGHT + 0.1;
                 }
-            }
-            bestResult[i] = best;
-            if (best.weight <= MAX_WEIGHT) {
-                comp[i] = best.destComp;
-                updated = 1;
+                bestResult[i] = best;
+                if (best.weight <= MAX_WEIGHT) {
+                    comp[i] = best.destComp;
+                    updated = 1;
+                }
+            } else {
+                //bestResult[i].weight = MAX_WEIGHT + 0.1;
             }
         }
         times[iterationNumber][threadId][1] = rdtsc.end(threadId);
@@ -139,11 +144,13 @@ bool doAll() {
                     comp[i] = i;
                 } else {
                     comp[i] = oc;
+                    bestResult[i].weight = MAX_WEIGHT + 0.1;
                     tmpTaskResult += best.weight;
                 }
             } else {
                 tmpTaskResult += best.weight;
                 comp[i] = oc;
+                bestResult[i].weight = MAX_WEIGHT + 0.1;
             }
         }
         times[iterationNumber][threadId][2] = rdtsc.end(threadId);
