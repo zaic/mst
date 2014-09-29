@@ -73,8 +73,13 @@ bool doAll() {
 #endif
         for (vid_t v = vertexIds[threadId]; v < vertexIds[threadId + 1]; ++v) {
             const vid_t cv = comp[v];
-            weight_t startWeight = edges[startEdgesIds[v]].weight;
-            for (eid_t e = startEdgesIds[v]; e < edgesIds[v + 1]; ++e) {
+            const eid_t edgesStart = startEdgesIds[v];
+            const eid_t edgesEnd = edgesIds[v + 1];
+            
+            weight_t startWeight = (edgesStart < edgesEnd ? edges[edgesStart].weight : 0);
+            eid_t newEdgesStart = edgesStart;
+
+            for (eid_t e = edgesStart; e < edgesEnd; ++e) {
                 weight_t weight = edges[e].weight;
                 if (weight > result[cv].weight) break;
                 const vid_t u = edges[e].dest;
@@ -85,9 +90,11 @@ bool doAll() {
                 }
                 if (weight > startWeight) {
                     startWeight = weight;
-                    startEdgesIds[v] = e;
+                    newEdgesStart = e;
                 }
             }
+
+            if (newEdgesStart != edgesStart) startEdgesIds[v] = newEdgesStart;
         }
         times[iterationNumber][threadId][0] = rdtsc.end(threadId);
 
@@ -255,6 +262,7 @@ int main(int argc, char *argv[]) {
 
     fprintf(stderr, "%.3lf\n%.3lf\n", double(prepareTime) / 1e9, double(calcTime) / 1e9);
 
+#if 0
     for (int i = 0; i < iterationNumber; ++i) {
         fprintf(stderr, "iteration %2d\n", i);
         for (int j = 0; j < threadsCount; ++j) {
@@ -264,6 +272,7 @@ int main(int argc, char *argv[]) {
             fputs("\n", stderr);
         }
     }
+#endif
 
     return 0;
 }
