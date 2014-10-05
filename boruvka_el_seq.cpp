@@ -13,11 +13,6 @@
 #endif
 using namespace std;
 
-#include <iostream>
-#define E(x) { cerr << #x << " = " << (x) << "   "; }
-#define Eo(x) { cerr << #x << " = " << (x) << endl; }
-#define EO(x) Eo(x)
-
 typedef pair<weight_t, eid_t> pwe;
 
 vid_t *comp;

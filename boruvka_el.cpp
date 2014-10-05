@@ -129,21 +129,6 @@ bool doAll() {
             vid_t reduceEndCompPre = int64_t(vertexCount) * ((threadId + 1) & ((1 << (treeIteration + 1)) - 1)) / threadsPerComp;
             const vid_t reduceEndComp = (reduceEndCompPre == 0 ? vertexCount : reduceEndCompPre);
 
-#if 0
-#pragma omp master
-            {
-                E("==================");
-                Eo(treeIteration);
-            }
-#pragma omp barrier
-#pragma omp critical
-            {
-                E(threadId); 
-                E(reduceStartComp); E(reduceEndComp);
-                E(reduceTo); Eo(reduceFrom);
-            }
-#endif
-
             for (vid_t i = reduceStartComp; i < reduceEndComp; ++i) {
                 if (comp[i] == i) {
                     if (localResult[reduceFrom][i] < localResult[reduceTo][i])
