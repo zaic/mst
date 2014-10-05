@@ -2,6 +2,12 @@
 
 #include <cinttypes>
 #include <utility>
+#include <iostream>
+
+#define E(x) { std::cerr << #x << " = " << (x) << "   "; }
+#define Eo(x) { std::cerr << #x << " = " << (x) << std::endl; }
+#define EO(x) Eo(x)
+
 
 typedef int32_t vid_t;
 typedef int32_t eid_t;
@@ -29,7 +35,7 @@ int64_t currentNanoTime();
 int stickThisThreadToCore(int coreId);
 
 struct RDTSC {
-    double timers[1024][64];
+    double timers[1024][64]; // ToDo fix array location on NUMA
     double oneSecond;
 
     RDTSC();

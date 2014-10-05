@@ -13,6 +13,11 @@
 #endif
 using namespace std;
 
+#include <iostream>
+#define E(x) { cerr << #x << " = " << (x) << "   "; }
+#define Eo(x) { cerr << #x << " = " << (x) << endl; }
+#define EO(x) Eo(x)
+
 typedef pair<weight_t, eid_t> pwe;
 
 vid_t *comp;
@@ -223,6 +228,8 @@ bool doAll() {
         }
     }
 
+    // TODO reduce edges?
+
     taskResult += tmpTaskResult;
     ++iterationNumber;
     return updated;
@@ -249,7 +256,6 @@ void doPrepare() {
         }
 #pragma omp barrier
 
-#ifndef ON_NUMA
         eid_t degreeEnd = int64_t(edgesCount) * (threadId + 1) / threadsCount;
         eid_t degreeSum = 0;
         for (vid_t i = 0; i < vertexCount; ++i) {
@@ -260,9 +266,6 @@ void doPrepare() {
                 break;
             }
         }
-#else
-        vertexIds[threadId + 1] = int64_t(vertexCount) * (threadId + 1) / threadsCount;
-#endif
 
         localResult[threadId] = new Result[vertexCount];
         for (vid_t i = 0; i < vertexCount; ++i)

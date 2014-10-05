@@ -4,6 +4,11 @@
 #include <time.h>
 #include <unistd.h>
 #include <pthread.h>
+#ifdef __clang__
+#include "omp.h"
+#else
+#include <omp.h>
+#endif
 
 const weight_t MAX_WEIGHT = 1.0;
 
@@ -26,13 +31,38 @@ void readAll(char *filename) {
     assert(f);
 
     fread(&vertexCount, sizeof(vid_t), 1, f);
-    edgesIds = new eid_t[vertexCount + 1];
-
     fread(&edgesCount, sizeof(eid_t), 1, f);
-    edges = new Edge[edgesCount];
 
-    fread(edgesIds, sizeof(eid_t), vertexCount + 1, f);
-    fread(edges, sizeof(Edge), edgesCount, f);
+    // NUMA-specific part
+    // Each core allocate memory and read data, which will processed on this core
+    int curThreadsCount;
+#pragma omp parallel
+    {
+#pragma omp master
+        {
+            curThreadsCount = omp_get_num_threads();
+        }
+    }
+    Eo(curThreadsCount);
+
+    edgesIds = (eid_t*)malloc(sizeof(eid_t) * (vertexCount + 1));
+    edges = (Edge*)malloc(sizeof(Edge) * (edgesCount));
+
+    for (int i = 0; i < curThreadsCount; ++i) {
+        stickThisThreadToCore(i);
+        const int vertexBegin = int64_t(vertexCount + 1) * i / curThreadsCount;
+        const int vertexEnd   = int64_t(vertexCount + 1) * (i + 1) / curThreadsCount;
+        fread(edgesIds + vertexBegin, sizeof(eid_t), vertexEnd - vertexBegin, f);
+    }
+
+    for (int i = 0; i < curThreadsCount; ++i) {
+        stickThisThreadToCore(i);
+        const int vertexBegin = int64_t(vertexCount) * i / curThreadsCount;
+        const int vertexEnd   = int64_t(vertexCount) * (i + 1) / curThreadsCount;
+        const int edgeBegin   = edgesIds[vertexBegin];
+        const int edgeEnd     = edgesIds[vertexEnd];
+        fread(edges + edgeBegin, sizeof(Edge), edgeEnd - edgeBegin, f);
+    }
 
     fclose(f);
 }
@@ -82,13 +112,13 @@ double RDTSC::end(int timerId) {
 RDTSC rdtsc;
 
 int stickThisThreadToCore(int coreId) {
-int num_cores = sysconf(_SC_NPROCESSORS_ONLN);
-   if (coreId >= num_cores) return 0;
+    const int num_cores = sysconf(_SC_NPROCESSORS_ONLN);
+    if (coreId >= num_cores) return 0;
 
-   cpu_set_t cpuset;
-   CPU_ZERO(&cpuset);
-   CPU_SET(coreId, &cpuset);
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(coreId, &cpuset);
 
-   pthread_t current_thread = pthread_self();
-   return pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset);
+    pthread_t current_thread = pthread_self();
+    return pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset);
 }
