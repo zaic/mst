@@ -240,7 +240,8 @@ bool doAll() {
         stickThisThreadToCore(threadId * 2);
         rdtsc.start(threadId);
 #pragma omp for nowait
-        for (vid_t i = 0; i < vertexCount; ++i) if (comp[i] == i) {
+        for (vid_t i = 0; i < vertexCount; ++i) if (comp[i] == i && fullComp[i].size() > 1) {
+            sort(fullComp[i].begin(), fullComp[i].end());
             vector<eid_t> curPos(fullComp[i].size(), 0); // position in edges lists for each merged component
             eid_t have = accumulate(fullComp[i].begin(), fullComp[i].end(), 0, [](eid_t a, eid_t b) ->  eid_t { return a + adjacencyLists[b].listSize; }); // sum of all merged edges
             EdgeList mergedList(have); // new list
@@ -262,12 +263,16 @@ bool doAll() {
                 assert(best < vertexCount);
                 --have;
 
+#if 1
+                const bool ok = !binary_search(fullComp[i].begin(), fullComp[i].end(), adjacencyLists[bestComp].edges[bestPos].destComp);
+#else
                 bool ok = true;
                 for (vid_t jc : fullComp[i]) // check for loops
                     if (adjacencyLists[bestComp].edges[bestPos].destComp == jc) {
                         ok = false;
                         break;
                     }
+#endif
                 if (ok) {
                     mergedList.edges[copyTo] = adjacencyLists[bestComp].edges[bestPos];
                     mergedList.edges[copyTo].destComp = comp[mergedList.edges[copyTo].destComp];
