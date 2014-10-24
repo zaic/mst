@@ -45,7 +45,8 @@ struct EdgeList {
     eid_t listSize;
 
     EdgeList() {
-
+        edges = NULL;
+        listSize = 0;
     }
 
     EdgeList(eid_t len, int cpuLocation = 0) {
@@ -54,7 +55,7 @@ struct EdgeList {
     }
 
     void clean() {
-        delete[] edges;
+        //delete[] edges; // TODO !!!
         edges = NULL;
         listSize = 0;
     }
@@ -65,10 +66,15 @@ struct EdgeList {
 
     EdgeList& operator=(EdgeList&& o) {
         if (this != &o) {
-            clean();
+            //clean();
             swap(edges, o.edges);
             swap(listSize, o.listSize);
         }
+        return *this;
+    }
+
+    EdgeList& operator=(const EdgeList& o) {
+        assert(false);
         return *this;
     }
 
@@ -117,23 +123,49 @@ bool doAll() {
         for (vid_t i = 0; i < vertexCount; ++i) {
             gComp[i].clear();
             fullComp[i].clear();
+            visitComp[i] = 0;
         }
 #pragma omp master
         {
+            // build graph where vertexes are components, which were constructed on prev iteration
             for (vid_t i = 0; i < vertexCount; ++i) if (comp[i] == i && adjacencyLists[i].listSize > 0) {
                 vid_t toi = adjacencyLists[i].edges[0].destComp;
-                assert(comp[toi] != comp[i]);
+                // assert(comp[toi] != comp[i]);
                 gComp[i].push_back(toi);
                 gComp[toi].push_back(i);
             }
-            memset(visitComp, 0, vertexCount);
+        }
+        times[iterationNumber][threadId][0] = rdtsc.end(threadId);
+#pragma omp barrier
+
+        rdtsc.start(threadId);
+#pragma omp master
+        {
+            eid_t edgesByThreads[threadsCount];
+
+            // dfs
             for (vid_t i = 0; i < vertexCount; ++i) if (!gComp[i].empty() && !visitComp[i]) {
                 dfs(i, fullComp[i]);
-                for (vid_t j : fullComp[i])
-                    comp[j] = fullComp[i].back();
                 if (fullComp[i].size() > 1)
                     updated = 1;
-                //E(i); Eo(fullComp[i].size());
+                // const vid_t transfer = fullComp[i].back();
+                //const vid_t transfer = fullComp[i][accumulate(fullComp[i].begin(), fullComp[i].end(), 0, [](vid_t res, vid_t cur) { return res + cur; }) % fullComp[i].size()];
+                const eid_t sumEdgesCount = accumulate(fullComp[i].begin(), fullComp[i].end(), 0, [](eid_t res, vid_t cur) { return res + adjacencyLists[cur].listSize; }) * fullComp[i].size();
+
+                vid_t transfer = fullComp[i][0];
+                int bestThreadId = upper_bound(vertexIds, vertexIds + threadsCount + 1, transfer) - vertexIds - 1;
+                for (vid_t j : fullComp[i]) {
+                    const int qthreadId = lower_bound(vertexIds, vertexIds + threadsCount + 1, j) - vertexIds - 1;
+                    if (edgesByThreads[qthreadId] < edgesByThreads[bestThreadId]) {
+                        transfer = j;
+                        bestThreadId = qthreadId;
+                    }
+                }
+                edgesByThreads[bestThreadId] += sumEdgesCount;
+
+                for (vid_t j : fullComp[i])
+                    comp[j] = transfer;
+
                 set<pvv> compEdges;
                 for (vid_t jc : fullComp[i])
                     for (vid_t to : gComp[jc])
@@ -144,12 +176,13 @@ bool doAll() {
                             else
                                 tmpTaskResult += adjacencyLists[to].edges[0].weight;
                         }
-                vid_t transfer = fullComp[i].back();
-                assert(transfer != i);
+                //assert(transfer != i);
                 fullComp[i].swap(fullComp[transfer]);
             }
+
+            //for (int i = 0; i < threadsCount; ++i) { E(i); Eo(edgesByThreads[i]); }
         }
-        times[iterationNumber][threadId][0] = rdtsc.end(threadId);
+        times[iterationNumber][threadId][1] = rdtsc.end(threadId);
 
 #if 0
 #pragma omp for reduction(+:tmpTaskResult) nowait
@@ -196,24 +229,22 @@ bool doAll() {
                     changed = 1;
                 }
             }
-            times[iterationNumber][threadId][1] = rdtsc.end(threadId);
+            times[iterationNumber][threadId][2] = rdtsc.end(threadId);
         }
     }
 
-    // merged edges lists
+    // merge edges lists
 #pragma omp parallel
     {
         const int threadId = omp_get_thread_num();
-        stickThisThreadToCore(threadId);
+        stickThisThreadToCore(threadId * 2);
         rdtsc.start(threadId);
-#pragma omp for
+#pragma omp for nowait
         for (vid_t i = 0; i < vertexCount; ++i) if (comp[i] == i) {
-            //Eo(i);
             vector<eid_t> curPos(fullComp[i].size(), 0); // position in edges lists for each merged component
             eid_t have = accumulate(fullComp[i].begin(), fullComp[i].end(), 0, [](eid_t a, eid_t b) ->  eid_t { return a + adjacencyLists[b].listSize; }); // sum of all merged edges
             EdgeList mergedList(have); // new list
             eid_t copyTo = 0; // position in new list
-            //Eo(have); Eo(fullComp[i].size());
 
             while (have > 0) {
                 vid_t best = vertexCount; // index in fullComp and curPos vectors
@@ -228,7 +259,6 @@ bool doAll() {
                         bestComp = jc;
                     }
                 }
-                //E(best); E(vertexCount); Eo(have);
                 assert(best < vertexCount);
                 --have;
 
@@ -242,17 +272,21 @@ bool doAll() {
                     mergedList.edges[copyTo] = adjacencyLists[bestComp].edges[bestPos];
                     mergedList.edges[copyTo].destComp = comp[mergedList.edges[copyTo].destComp];
                     copyTo++;
-                    // TODO fix dest comp
                 }
                 curPos[best]++;
             }
+            assert(copyTo <= mergedList.listSize);
             mergedList.listSize = copyTo;
             // remove old lists
-            for (vid_t jc : fullComp[i])
+            for (vid_t jc : fullComp[i]) {
+                assert(adjacencyLists[jc].edges != NULL);
                 adjacencyLists[jc].clean();
-            adjacencyLists[comp[i]] = move(mergedList);
+            }
+            //adjacencyLists[comp[i]] = move(mergedList);
+            swap(adjacencyLists[comp[i]].edges, mergedList.edges);
+            adjacencyLists[comp[i]].listSize = mergedList.listSize;
         }
-        times[iterationNumber][threadId][2] = rdtsc.end(threadId);
+        times[iterationNumber][threadId][3] = rdtsc.end(threadId);
     }
 
     taskResult += tmpTaskResult;
@@ -299,10 +333,12 @@ void doPrepare() {
 #else
         vertexIds[threadId + 1] = int64_t(vertexCount) * (threadId + 1) / threadsCount;
 #endif
+#pragma omp barrier
 
         for (vid_t i = vertexIds[threadId]; i < vertexIds[threadId + 1]; ++i) {
             sort(edges + edgesIds[i], edges + edgesIds[i + 1], EdgeWeightCmp());
-            adjacencyLists[i] = EdgeList(edgesIds[i + 1] - edgesIds[i]);
+            adjacencyLists[i].listSize = (edgesIds[i + 1] - edgesIds[i]);
+            adjacencyLists[i].edges = new ExtEdge[adjacencyLists[i].listSize];
             eid_t copyTo = 0;
             for (eid_t j = 0; j < adjacencyLists[i].listSize; ++j) {
                 const eid_t eid = edgesIds[i] + j;
@@ -355,7 +391,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "iteration %2d\n", i);
         for (int j = 0; j < threadsCount; ++j) {
             fprintf(stderr, "%02d:   ", j);
-            for (int k = 0; k < 3; ++k)
+            for (int k = 0; k < 4; ++k)
                 fprintf(stderr, "%.6lf ", times[i][j][k]);
             fputs("\n", stderr);
         }
