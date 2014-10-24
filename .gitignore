@@ -3,30 +3,25 @@
 *.lo
 *.o
 *.obj
-
 # Compiled Dynamic libraries
 *.so
 *.dylib
 *.dll
-
 # Compiled Static libraries
 *.lai
 *.la
 *.a
 *.lib
-
 # Executables
 *.exe
 *.out
 *.app
-
 # Input Data
 *.bin
 rmat[0-9][0-9]
-
 # Vim files
 .*.sw[p-z]
-
 # Temporary trash
 src.tar.bz2
 src.tar.xz
+boruvka_el_calcComponentSize.cpp
