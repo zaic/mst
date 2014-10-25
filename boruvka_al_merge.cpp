@@ -246,7 +246,25 @@ bool doAll() {
             eid_t have = accumulate(fullComp[i].begin(), fullComp[i].end(), 0, [](eid_t a, eid_t b) ->  eid_t { return a + adjacencyLists[b].listSize; }); // sum of all merged edges
             EdgeList mergedList(have); // new list
             eid_t copyTo = 0; // position in new list
+            
+            priority_queue<pwv> mergeQueue;
+            for (int j = 0; j < fullComp[i].size(); ++j) {
+                mergeQueue.push(pwv(-adjacencyLists[fullComp[i][j]].edges[0].weight, j));
+            }
+#if 1
+            while (!mergeQueue.empty()) {
+                const pwv bestPair = mergeQueue.top();
+                mergeQueue.pop();
 
+                const vid_t best = bestPair.second;
+                const eid_t bestPos = curPos[best];
+                const vid_t bestComp = fullComp[i][best];
+
+                //++curPos[best];
+                if (curPos[best] < adjacencyLists[bestComp].listSize) {
+                    mergeQueue.push(pwv(-adjacencyLists[bestComp].edges[bestPos + 1].weight, best));
+                }
+#else
             while (have > 0) {
                 vid_t best = vertexCount; // index in fullComp and curPos vectors
                 eid_t bestPos = 0; // index in edges list for best component
@@ -262,7 +280,7 @@ bool doAll() {
                 }
                 assert(best < vertexCount);
                 --have;
-
+#endif
 #if 1
                 const bool ok = !binary_search(fullComp[i].begin(), fullComp[i].end(), adjacencyLists[bestComp].edges[bestPos].destComp);
 #else

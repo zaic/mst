@@ -12,8 +12,10 @@
 typedef int32_t vid_t;
 typedef int32_t eid_t;
 typedef double weight_t;
+
 typedef std::pair<vid_t, vid_t> pvv;
 typedef std::pair<eid_t, int> pei;
+typedef std::pair<weight_t, vid_t> pwv;
 
 struct Edge {
     vid_t dest;
