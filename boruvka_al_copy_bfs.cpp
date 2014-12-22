@@ -21,6 +21,11 @@ vid_t *comp;
 weight_t taskResult;
 
 int threadsCount;
+#ifdef ON_NUMA
+vid_t vertexesPerThread;
+#else
+#define vertexesPerThread #error numa_only
+#endif
 vid_t *vertexIds;
 int iterationNumber;
 
@@ -49,9 +54,9 @@ eid_t *bestEid; // TODO very temporary array
 /*
  *  temporary bfs data
  */
-const int max_bfs_queue_len = 1000;
-vid_t bfs_queue[max_bfs_queue_len];
-signed char *bfs_visited;
+const int kMaxBfsQueue = 1000;
+vid_t bfs_queue[kMaxThreads][kMaxBfsQueue];
+signed char *bfs_visited[kMaxThreads];
 
 /*
  *  edges lists
@@ -68,7 +73,7 @@ bool doAll() {
     weight_t tmpTaskResult = 0.0; // merge stage
     Eo(iterationNumber);
 
-#pragma omp parallel
+#pragma omp parallel reduction(+:updated) reduction(+:tmpTaskResult)
     {
         const int threadId = omp_get_thread_num();
         stickThisThreadToCore(threadId);
@@ -130,60 +135,39 @@ bool doAll() {
 #pragma omp barrier
 
         rdtsc.start(threadId);
-#pragma omp master
+//#pragma omp master
         {
             eid_t edgesByThreads[threadsCount];
             memset(edgesByThreads, 0, sizeof(edgesByThreads));
 
-            for (vid_t i = 0; i < vertexCount; ++i) if (!gComp[i].empty() && bfs_visited[i] < iterationNumber) {
+            signed char *visited = bfs_visited[threadId];
+            //for (vid_t i = 0; i < vertexCount; ++i) if (!gComp[i].empty() && visited[i] < iterationNumber) {
+            for (vid_t i = vertexIds[threadId]; i < vertexIds[threadId + 1]; ++i) if (!gComp[i].empty() && visited[i] < iterationNumber) {
                 // bfs
+                vector<vid_t> bfs_component(1, i);
                 {
+                    vid_t *que = bfs_queue[threadId];
                     int from = 0, to = 1;
-                    bfs_queue[from] = i;
-                    bfs_visited[i]  = iterationNumber;
-                    vector<vid_t> bfs_component(1, i);
+                    que[from] = i;
+                    visited[i] = iterationNumber;
                     while (from < to) {
-                        const vid_t wave_from = bfs_queue[from++];
-                        for (vid_t wave_to : gComp[wave_from]) if (bfs_visited[wave_to] < iterationNumber) {
-                            bfs_visited[wave_to] = iterationNumber;
+                        const vid_t wave_from = que[from++];
+                        for (vid_t wave_to : gComp[wave_from]) if (visited[wave_to] < iterationNumber) {
+                            visited[wave_to] = iterationNumber;
                             //assert(to < max_bfs_queue_len);
-                            bfs_queue[to++] = wave_to;
+                            que[to++] = wave_to;
                             bfs_component.push_back(wave_to);
                         }
                     }
-                    //fullComp[i] = std::move(vector<vid_t>(bfs_queue, bfs_queue + to));
-                    fullComp[i].swap(bfs_component);
                 }
+                sort(bfs_component.begin(), bfs_component.end());
+                vid_t sum = std::accumulate(bfs_component.begin(), bfs_component.end(), vid_t(0));
+                vid_t transfer = bfs_component[sum % bfs_component.size()];
+                if (transfer / vertexesPerThread != threadId) continue;
 
-                // old part begins
-                if (fullComp[i].size() > 1)
+                if (bfs_component.size() > 1)
                     updated = 1;
-                vector<vid_t> theirComps;
-                for (int cur : fullComp[i]) {
-                    int ownedThread = 0;
-                    while (vertexIds[ownedThread + 1] <= cur) ++ownedThread;
-                    theirComps.push_back(ownedThread);
-                }
-                //E(i); Eo(fullComp[i].size());
-
-                const eid_t sumEdgesCount = accumulate(fullComp[i].begin(), fullComp[i].end(), 0, [](eid_t res, vid_t cur) -> eid_t { 
-                    int ownedThread = 0;
-                    while (vertexIds[ownedThread + 1] <= cur) ++ownedThread;
-                    return res + edgesIdsByThread[ownedThread][cur + 1] - edgesIdsByThread[ownedThread][cur];
-#if 0
-                        int curThreadId = 0;
-                        for (; vertexIds[curThreadId] > cur; ++curThreadId);
-                        //return res + sumOfAllEdges;  TODO calc edges count for vertex "cur"
-#endif
-                });
-
-                //vid_t transfer = fullComp[i][(i * 37 + iterationNumber * 47) % fullComp[i].size()];
-                vid_t transfer = 0;
-                for (int nt = 1; nt < fullComp[i].size(); ++nt) if (edgesByThreads[theirComps[nt]] < edgesByThreads[theirComps[transfer]])
-                    transfer = nt;
-                edgesByThreads[theirComps[transfer]] += sumEdgesCount;
-                transfer = fullComp[i][transfer];
-
+                fullComp[i].swap(bfs_component);
                 /*
                 int bestThreadId = upper_bound(vertexIds, vertexIds + threadsCount + 1, transfer) - vertexIds - 1;
                 for (vid_t j : fullComp[i]) {
@@ -239,6 +223,8 @@ bool doAll() {
         times[iterationNumber][threadId][2] = rdtsc.end(threadId);
 #endif
     }
+
+#pragma omp barrier
 
     // pointer jumping
     int changed = 100500;
@@ -322,10 +308,6 @@ void doPrepare() {
     fullComp = new vector<vid_t>[vertexCount];
     bestEid = new eid_t[vertexCount];
 
-    // bfs data
-    bfs_visited = new signed char[vertexCount];
-    for (vid_t i = 0; i < vertexCount; ++i)
-        bfs_visited[i] = -1;
 
 #pragma omp parallel
     {
@@ -337,6 +319,10 @@ void doPrepare() {
             sumOfAllEdges = new eid_t[threadsCount];
             edgesByThread = new ExtEdge*[threadsCount];
             edgesIdsByThread = new eid_t*[threadsCount];
+#ifdef ON_NUMA
+            vertexesPerThread = vertexCount / threadsCount;
+            assert(vertexesPerThread * threadsCount == vertexCount);
+#endif
         }
 
 #pragma omp barrier
@@ -378,7 +364,12 @@ void doPrepare() {
         }
         Eo(myEdgeId);
         edgesIdsByThread[threadId][vertexIds[threadId + 1]] = myEdgeId;
-    }
+
+        // bfs data
+        bfs_visited[threadId] = new signed char[vertexCount];
+        for (vid_t i = 0; i < vertexCount; ++i)
+            bfs_visited[threadId][i] = -1;
+        }
 }
 
 void warmup() {
