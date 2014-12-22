@@ -49,6 +49,8 @@ double times[kMaxThreads][kMaxIterations][40];
  *  temporary dfs data
  */
 vector<vid_t> *gComp; // adjacency list
+vector<pvv> graph_messages[kMaxThreads][kMaxThreads];
+
 vector<vid_t> *fullComp; // contains entire new component
 eid_t *bestEid; // TODO very temporary array
 /*
@@ -114,6 +116,7 @@ bool doAll() {
             fullComp[i].clear();
         }
 
+#ifndef MESSAGES
 #pragma omp for
         for (vid_t i = 0; i < vertexCount; ++i) if (comp[i] == i && bestEid[i] != -1) {
             vid_t toi = comp[edges[bestEid[i]].dest]; // TODO improve pref using destComp from ExtEdge
@@ -121,6 +124,7 @@ bool doAll() {
             gComp[i].push_back(toi);
             //gComp[toi].push_back(i);
         }
+
 #pragma omp master
         {
             // build graph where vertexes are components, which were constructed on prev iteration
@@ -131,6 +135,22 @@ bool doAll() {
                 gComp[toi].push_back(i);
             }
         }
+#else
+        for (int i = 0; i < threadsCount; ++i)
+            graph_messages[threadId][i].clear();
+#pragma omp barrier
+        for (vid_t i = vertexIds[threadId]; i < vertexIds[threadId + 1]; ++i) if (comp[i] == i && bestEid[i] != -1) {
+            vid_t toi = comp[edges[bestEid[i]].dest]; // TODO improve pref using destComp from ExtEdge
+            vid_t toi_thread = toi / vertexesPerThread;
+            gComp[i].push_back(toi);
+            graph_messages[threadId][toi_thread].push_back(pvv(toi, i));
+            //gComp[toi].push_back(i);
+        }
+#pragma omp barrier
+        for (int i = 0; i < threadsCount; ++i)
+            for (const pvv e : graph_messages[i][threadId])
+                gComp[e.first].push_back(e.second);
+#endif /* MESSAGES */
         times[iterationNumber][threadId][1] = rdtsc.end(threadId);
 #pragma omp barrier
 
