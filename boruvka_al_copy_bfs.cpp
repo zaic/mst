@@ -16,6 +16,8 @@
 using namespace std;
 
 typedef pair<weight_t, eid_t> pwe;
+const int kMaxIterations = 40;
+const int kMaxThreads = 20;
 
 vid_t *comp;
 weight_t taskResult;
@@ -29,19 +31,42 @@ vid_t vertexesPerThread;
 vid_t *vertexIds;
 int iterationNumber;
 
+#ifdef USE_EDGE_STRUCT
 struct ExtEdge {
-    weight_t weight;
-    eid_t origId;
-    vid_t destComp;
+    weight_t weight; // 8
+    eid_t origId;    // 8
+    vid_t destComp;  // 4
 
     bool operator<(const ExtEdge& o) const {
         if (weight != o.weight) return weight < o.weight;
         return destComp < o.destComp;
     }
 };
+ExtEdge **edgesByThread;
+#else
+namespace ExtEdge {
+    weight_t *weight[kMaxThreads];
+    eid_t    *origId[kMaxThreads];
+    vid_t    *destComp[kMaxThreads];
 
-const int kMaxIterations = 40;
-const int kMaxThreads = 20;
+    inline bool compareEdge(int ta, eid_t a, int tb, eid_t b) {
+        const weight_t wa = weight[ta][a];
+        const weight_t wb = weight[tb][b];
+        if (wa != wb) return wa < wb;
+        return destComp[ta][a] < destComp[tb][b];
+    }
+
+    void allocEdges() {
+        for (int i = 0; i < threadsCount; ++i) {
+            Eo(edgesCount);
+            weight[i] = (weight_t*)malloc(edgesCount * sizeof(weight_t));
+            origId[i] = (eid_t*)malloc(edgesCount * sizeof(eid_t));
+            destComp[i] = (vid_t*)malloc(edgesCount * sizeof(vid_t));
+        }
+    }
+} /* namespace ExtEdge */
+#endif /* USE_EDGE_STRUCT */
+
 double times[kMaxThreads][kMaxIterations][40];
 
 
@@ -64,7 +89,6 @@ signed char *bfs_visited[kMaxThreads];
  *  edges lists
  */
 eid_t *sumOfAllEdges; // TODO make 2-dim: [arrayFrom][arrayTo + gap]
-ExtEdge **edgesByThread;
 eid_t **edgesIdsByThread; // indexes in previous array
 
 
@@ -85,7 +109,9 @@ bool doAll() {
         //
         rdtsc.start(threadId);
 
+#ifdef USE_EDGE_STRUCT
         auto curEdges = edgesByThread[threadId];
+#endif
         auto curEdgesIds = edgesIdsByThread[threadId];
         for (vid_t v = vertexIds[threadId]; v < vertexIds[threadId + 1]; ++v) {
             // E(v); E(curEdgesIds[v]); Eo(curEdgesIds[v + 1]);
@@ -95,11 +121,19 @@ bool doAll() {
             }
             assert(comp[v] == v);
             eid_t bestId = curEdgesIds[v];
-            for (eid_t e = curEdgesIds[v] + 1; e < curEdgesIds[v + 1]; ++e)
+            for (eid_t e = curEdgesIds[v] + 1; e < curEdgesIds[v + 1]; ++e) {
+#ifdef USE_EDGE_STRUCT
                 if (curEdges[e] < curEdges[bestId])
+#else
+                if (ExtEdge::compareEdge(threadId, e, threadId, bestId))
+#endif
                     bestId = e;
+            }
+#ifdef USE_EDGE_STRUCT
             bestEid[v] = curEdges[bestId].origId;
-            // if (iterationNumber > 0) { E(v); E(curEdgesIds[v]); Eo(curEdgesIds[v + 1]); Eo(bestEid[v]); }
+#else
+            bestEid[v] = ExtEdge::origId[threadId][bestId];
+#endif
         }
 
         times[iterationNumber][threadId][0] = rdtsc.end(threadId);
@@ -136,8 +170,9 @@ bool doAll() {
             }
         }
 #else
-        for (int i = 0; i < threadsCount; ++i)
+        for (int i = 0; i < threadsCount; ++i) {
             graph_messages[threadId][i].clear();
+        }
 #pragma omp barrier
         for (vid_t i = vertexIds[threadId]; i < vertexIds[threadId + 1]; ++i) if (comp[i] == i && bestEid[i] != -1) {
             vid_t toi = comp[edges[bestEid[i]].dest]; // TODO improve pref using destComp from ExtEdge
@@ -159,6 +194,7 @@ bool doAll() {
         {
             eid_t edgesByThreads[threadsCount];
             memset(edgesByThreads, 0, sizeof(edgesByThreads));
+            eid_t edgesCountOnNextIter = 0;
 
             signed char *visited = bfs_visited[threadId];
             //for (vid_t i = 0; i < vertexCount; ++i) if (!gComp[i].empty() && visited[i] < iterationNumber) {
@@ -217,7 +253,7 @@ bool doAll() {
                 if (i != transfer) fullComp[i].swap(fullComp[transfer]);
             }
 
-            //for (int i = 0; i < threadsCount; ++i) { E(i); Eo(edgesByThreads[i]); }
+            sumOfAllEdges[threadId] = edgesCountOnNextIter;
         }
         times[iterationNumber][threadId][2] = rdtsc.end(threadId);
 
@@ -268,7 +304,7 @@ bool doAll() {
                     changed = 1;
                 }
             }
-            times[iterationNumber][threadId][3] = rdtsc.end(threadId);
+            times[iterationNumber][threadId][3] += rdtsc.end(threadId);
         }
     }
 
@@ -281,7 +317,13 @@ bool doAll() {
 
         eid_t sumFutureEdges = 0;
         // for (int i = 0; i < threadsCount; ++i) sumFutureEdges += sumOfAllEdges[i][threadId];
+#ifdef USE_EDGE_STRUCT
         ExtEdge *nextIterEdges = new ExtEdge[edgesCount]; // TODO fix: using sumFutureEdges
+#else
+        weight_t *nextWeight   = (weight_t*)malloc(edgesCount * sizeof(weight_t));
+        eid_t    *nextOrigId   = (eid_t*)   malloc(edgesCount * sizeof(eid_t));
+        vid_t    *nextDestComp = (vid_t*)   malloc(edgesCount * sizeof(vid_t));
+#endif
         eid_t *nextEdgesIds = new eid_t[vertexCount + 1]; // TODO array size can be reduced
         nextEdgesIds[0] = 0;
         eid_t edgeId = 0;
@@ -293,8 +335,19 @@ bool doAll() {
                     int ownedThread = 0;
                     while (vertexIds[ownedThread + 1] <= u) ++ownedThread;
                     for (eid_t e = edgesIdsByThread[ownedThread][u]; e < edgesIdsByThread[ownedThread][u + 1]; ++e) {
+#ifdef USE_EDGE_STRUCT
                         if (comp[edgesByThread[ownedThread][e].destComp] == v) continue; // skip loops
                         nextIterEdges[edgeId] = edgesByThread[ownedThread][e];
+#else
+                        const vid_t edgeDest = ExtEdge::destComp[ownedThread][e];
+                        if (comp[edgeDest] == v) continue; // skip loops
+                        const eid_t edgeOrigId = ExtEdge::origId[ownedThread][e];
+                        const weight_t edgeWeidght = ExtEdge::weight[ownedThread][e];
+
+                        nextWeight[edgeId] = edgeWeidght;
+                        nextOrigId[edgeId] = edgeOrigId;
+                        nextDestComp[edgeId] = edgeDest;
+#endif
                         ++edgeId;
                     }
                 }
@@ -305,8 +358,17 @@ bool doAll() {
         times[iterationNumber][threadId][4] = rdtsc.end(threadId);
 #pragma omp barrier
 
+#ifdef USE_EDGE_STRUCT
         delete[] edgesByThread[threadId];
         edgesByThread[threadId] = nextIterEdges;
+#else
+        free(ExtEdge::weight[threadId]);
+        ExtEdge::weight[threadId] = nextWeight;
+        free(ExtEdge::origId[threadId]);
+        ExtEdge::origId[threadId] = nextOrigId;
+        free(ExtEdge::destComp[threadId]);
+        ExtEdge::destComp[threadId] = nextDestComp;
+#endif
         delete[] edgesIdsByThread[threadId];
         edgesIdsByThread[threadId] = nextEdgesIds;
     }
@@ -317,9 +379,6 @@ bool doAll() {
 }
 
 void doPrepare() {
-    vertexIds = new vid_t[vertexCount + 1]; // TODO fix: array size is threads_count + 1
-    vertexIds[0] = 0;
-
     comp = new vid_t[vertexCount];
     for (vid_t i = 0; i < vertexCount; ++i)
         comp[i] = i;
@@ -336,13 +395,21 @@ void doPrepare() {
 #pragma omp master
         {
             threadsCount = curThreadsCount;
+
+            vertexIds = new vid_t[threadsCount + 1];
+            vertexIds[0] = 0;
+
             sumOfAllEdges = new eid_t[threadsCount];
-            edgesByThread = new ExtEdge*[threadsCount];
             edgesIdsByThread = new eid_t*[threadsCount];
+#ifdef USE_EDGE_STRUCT
+            edgesByThread = new ExtEdge*[threadsCount];
+#else
+            ExtEdge::allocEdges();
+#endif /* USE_EDGE_STRUCT */
 #ifdef ON_NUMA
             vertexesPerThread = vertexCount / threadsCount;
             assert(vertexesPerThread * threadsCount == vertexCount);
-#endif
+#endif /* ON_NUMA */
         }
 
 #pragma omp barrier
@@ -360,7 +427,7 @@ void doPrepare() {
         }
 #else
         vertexIds[threadId + 1] = int64_t(vertexCount) * (threadId + 1) / threadsCount;
-#endif
+#endif /* ON_NUMA */
 #pragma omp barrier
 
         sumOfAllEdges[threadId] = 0;
@@ -369,20 +436,24 @@ void doPrepare() {
             const eid_t curEdgesCount = edgesIds[i + 1] - edgesIds[i];
             sumOfAllEdges[threadId] += curEdgesCount;
         }
+#ifdef USE_EDGE_STRUCT
         edgesByThread[threadId] = new ExtEdge[sumOfAllEdges[threadId]];
         auto myEdges = edgesByThread[threadId];
+#endif
         eid_t myEdgeId = 0;
         for (vid_t i = vertexIds[threadId]; i < vertexIds[threadId + 1]; ++i) {
             edgesIdsByThread[threadId][i] = myEdgeId;
             for (eid_t j = edgesIds[i]; j < edgesIds[i + 1]; ++j) if (edges[j].dest != i) {
+#ifdef USE_EDGE_STRUCT
                 myEdges[myEdgeId] = ExtEdge{edges[j].weight, j, edges[j].dest};
-                if (myEdgeId % 100000 == 0) {
-                    //E(myEdgeId); E(i); E(j); E(edgesByThread[0][myEdgeId].weight); E(edgesByThread[0][myEdgeId].origId); Eo(edgesByThread[0][myEdgeId].weight);
-                }
+#else
+                ExtEdge::weight[threadId][myEdgeId] = edges[j].weight;
+                ExtEdge::origId[threadId][myEdgeId] = j;
+                ExtEdge::destComp[threadId][myEdgeId] = edges[j].dest;
+#endif
                 ++myEdgeId;
             }
         }
-        Eo(myEdgeId);
         edgesIdsByThread[threadId][vertexIds[threadId + 1]] = myEdgeId;
 
         // bfs data
@@ -428,7 +499,7 @@ int main(int argc, char *argv[]) {
 
     fprintf(stderr, "%.3lf\n%.3lf\n", double(prepareTime) / 1e9, double(calcTime) / 1e9);
 
-#if 1
+#if 0
     for (int i = 0; i < iterationNumber; ++i) {
         fprintf(stderr, "iteration %2d\n", i);
         for (int j = 0; j < threadsCount; ++j) {
