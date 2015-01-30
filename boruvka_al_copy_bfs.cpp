@@ -13,6 +13,7 @@
 #else
 #include <omp.h>
 #endif
+#include "vector.h"
 using namespace std;
 
 typedef pair<weight_t, eid_t> pwe;
@@ -73,7 +74,8 @@ double times[kMaxThreads][kMaxIterations][40];
 /*
  *  temporary dfs data
  */
-vector<vid_t> *gComp; // adjacency list
+//vector<vid_t> *gComp; // adjacency list
+Vector<vid_t, 100> *gComp;
 vector<pvv> graph_messages[kMaxThreads][kMaxThreads];
 
 vector<vid_t> *fullComp; // contains entire new component
@@ -155,7 +157,7 @@ bool doAll() {
         for (vid_t i = 0; i < vertexCount; ++i) if (comp[i] == i && bestEid[i] != -1) {
             vid_t toi = comp[edges[bestEid[i]].dest]; // TODO improve pref using destComp from ExtEdge
             //assert(comp[toi] != comp[i]);
-            gComp[i].push_back(toi);
+            gComp[i].pushBack(toi);
             //gComp[toi].push_back(i);
         }
 
@@ -172,21 +174,25 @@ bool doAll() {
 #else
         for (int i = 0; i < threadsCount; ++i) {
             graph_messages[threadId][i].clear();
+            if (iterationNumber == 0)
+                graph_messages[threadId][i].reserve(vertexCount * 3 / 2 / threadsCount / threadsCount);
         }
 #pragma omp barrier
-        for (vid_t i = vertexIds[threadId]; i < vertexIds[threadId + 1]; ++i) if (comp[i] == i && bestEid[i] != -1) {
-            vid_t toi = comp[edges[bestEid[i]].dest]; // TODO improve pref using destComp from ExtEdge
-            vid_t toi_thread = toi / vertexesPerThread;
-            gComp[i].push_back(toi);
+        const vid_t ito = vertexIds[threadId + 1];
+        for (vid_t i = vertexIds[threadId]; i < ito; ++i) {
+            const eid_t curBestEid = bestEid[i];
+            if (curBestEid == -1) continue;
+            const vid_t toi = (iterationNumber == 0 ? edges[curBestEid].dest : comp[edges[curBestEid].dest]); // TODO improve pref using destComp from ExtEdge
+            const vid_t toi_thread = toi / vertexesPerThread;
             graph_messages[threadId][toi_thread].push_back(pvv(toi, i));
-            //gComp[toi].push_back(i);
+            gComp[i].pushBack(toi);
         }
 #pragma omp barrier
         for (int i = 0; i < threadsCount; ++i)
             for (const pvv e : graph_messages[i][threadId])
-                gComp[e.first].push_back(e.second);
-#endif /* MESSAGES */
+                gComp[e.first].pushBack(e.second);
         times[iterationNumber][threadId][1] = rdtsc.end(threadId);
+#endif /* MESSAGES */
 #pragma omp barrier
 
         rdtsc.start(threadId);
@@ -208,11 +214,15 @@ bool doAll() {
                     visited[i] = iterationNumber;
                     while (from < to) {
                         const vid_t wave_from = que[from++];
-                        for (vid_t wave_to : gComp[wave_from]) if (visited[wave_to] < iterationNumber) {
-                            visited[wave_to] = iterationNumber;
-                            //assert(to < max_bfs_queue_len);
-                            que[to++] = wave_to;
-                            bfs_component.push_back(wave_to);
+                        for (int64_t wave_to_id = 0; wave_to_id < gComp[wave_from].size(); ++wave_to_id) {
+                            vid_t wave_to = gComp[wave_from].at(wave_to_id);
+                        //for (vid_t wave_to : gComp[wave_from]) 
+                            if (visited[wave_to] < iterationNumber) {
+                                visited[wave_to] = iterationNumber;
+                                //assert(to < max_bfs_queue_len);
+                                que[to++] = wave_to;
+                                bfs_component.push_back(wave_to);
+                            }
                         }
                     }
                 }
@@ -238,7 +248,9 @@ bool doAll() {
 
                 set<pvv> compEdges;
                 for (vid_t jc : fullComp[i])
-                    for (vid_t to : gComp[jc])
+                    for (int64_t to_id = 0; to_id < gComp[jc].size(); ++to_id) {
+                        vid_t to = gComp[jc].at(to_id);
+                    //for (vid_t to : gComp[jc])
                         if (jc < to && !compEdges.count(pvv(jc, to))) {
                             compEdges.insert(pvv(jc, to));
                             if (comp[edges[bestEid[jc]].dest] == to)
@@ -246,6 +258,7 @@ bool doAll() {
                             else
                                 tmpTaskResult += edges[bestEid[to]].weight;
                         }
+                    }
                 //assert(transfer != i);
                 for (vid_t j : fullComp[i])
                     comp[j] = transfer;
@@ -383,7 +396,7 @@ void doPrepare() {
     for (vid_t i = 0; i < vertexCount; ++i)
         comp[i] = i;
 
-    gComp = new vector<vid_t>[vertexCount];
+    gComp = new Vector<vid_t, 100>[vertexCount];
     fullComp = new vector<vid_t>[vertexCount];
     bestEid = new eid_t[vertexCount];
 
@@ -499,7 +512,7 @@ int main(int argc, char *argv[]) {
 
     fprintf(stderr, "%.3lf\n%.3lf\n", double(prepareTime) / 1e9, double(calcTime) / 1e9);
 
-#if 0
+#if 1
     for (int i = 0; i < iterationNumber; ++i) {
         fprintf(stderr, "iteration %2d\n", i);
         for (int j = 0; j < threadsCount; ++j) {
