@@ -4,19 +4,30 @@
 #include <assert.h>
 #include <math.h>
 #include <error.h>
+#include <algorithm> 
+#include <unistd.h>
 #include "defs.h"
+
+#define edges zedges
+#include "../gen.h"
+#undef edges
+
+#define NROOTS_DEFAULT 64
 
 #define FNAME_LEN   256
 char outFilename[FNAME_LEN];
+bool writeTextFile = false;
+
+vector<edge_id_t> edges;
 
 void usage(int argc, char **argv) 
 {
+    printf("RMAT graph generator\n");
 	printf("Usage:\n");
-	printf("    %s -s [options]\n", argv[0]);
+	printf("    %s -s <scale> [options]\n", argv[0]);
     printf("Options:\n");
     printf("   -s <scale>, number of vertices is 2^<scale>\n");
     printf("   -k <half the average vertex degree>, default value is 16\n");
-    printf("   -nRoots <value> -- number of search root vertices. Default value is 10\n");
     printf("   -out <filename>, rmat-<s> is default value\n");
     exit(1);
 }
@@ -32,9 +43,11 @@ void init (int argc, char** argv, graph_t* G)
     G->min_weight = 0;
     G->max_weight = 1;
     /* default value */
-    G->nRoots = 10;
     G->avg_vertex_degree = DEFAULT_ARITY;
-
+    if (argc == 1) {
+        usage(argc, argv);
+    }
+    int no_file_name = 1;
 	for (int i = 1; i < argc; ++i) {
 		if (!strcmp(argv[i], "-s")) {
 			G->scale = (int) atoi(argv[++i]);
@@ -42,18 +55,20 @@ void init (int argc, char** argv, graph_t* G)
 		if (!strcmp(argv[i], "-k")) {
 			G->avg_vertex_degree = (int) atoi(argv[++i]);
         }
-        if (!strcmp(argv[i], "-nRoots")) {
-            G->nRoots = (uint32_t) atoi(argv[++i]);
-        }
    		if (!strcmp(argv[i], "-out")) {
-            int l = strlen(argv[i]);
-            strncpy(outFilename, argv[++i], (l > FNAME_LEN-1 ? FNAME_LEN-1 : l) );
+            no_file_name = 0;
+            int l = strlen(argv[++i]) ;
+            strncpy(outFilename, argv[++i], (l+1 > FNAME_LEN-1 ? FNAME_LEN-1 : l+1) );
         }
+        if (!strcmp(argv[i], "-text")) {
+            writeTextFile = true;
+        }
+
     }
+    if (no_file_name) sprintf(outFilename, "rmat-%d", G->scale);
 	if (G->scale == -1) usage(argc, argv);
     G->n = (vertex_id_t)1 << G->scale;
     G->m = G->n * G->avg_vertex_degree;
-    sprintf(outFilename, "rmat-%d", G->scale);
 
 }
 
@@ -61,7 +76,6 @@ void init (int argc, char** argv, graph_t* G)
  * http://snap-graph.sourceforge.net/ */
 void gen_RMAT_graph(graph_t* G) 
 {
-    edge_id_t i, j;
     bool undirected;
     vertex_id_t n;
     edge_id_t m;
@@ -110,7 +124,7 @@ void gen_RMAT_graph(graph_t* G)
     SCALE = G->scale;
 
     /* Generate edges */
-    for (i=0; i<m; i++) {
+    for (edge_id_t i=0; i<m; i++) {
 
         u = 1;
         v = 1;
@@ -133,7 +147,7 @@ void gen_RMAT_graph(graph_t* G)
             v += step;
         }
 
-        for (j=1; j<SCALE; j++) {
+        for (int j=1; j<SCALE; j++) {
             step = step/2;
 
             /* Vary a,b,c,d by up to 10% */
@@ -171,25 +185,25 @@ void gen_RMAT_graph(graph_t* G)
         permV = (vertex_id_t *) malloc(n*sizeof(vertex_id_t));
         assert(permV != NULL);
 
-        for (i=0; i<n; i++) {
+        for (vertex_id_t i=0; i<n; i++) {
             permV[i] = i;
         }
 
-        for (i=0; i<n; i++) {
-            j = n * drand48();
+        for (vertex_id_t i=0; i<n; i++) {
+            vertex_id_t j = n * drand48();
             tmpVal = permV[i];
             permV[i] = permV[j];
             permV[j] = tmpVal;
         }
 
-        for (i=0; i<m; i++) {
+        for (edge_id_t i=0; i<m; i++) {
             src[i]  = permV[src[i]];
             dest[i] = permV[dest[i]];
         }
         free(permV);
     }
 
-    for (i=0; i<m; i++) {
+    for (edge_id_t i=0; i<m; i++) {
         degree[src[i]]++;
         if (undirected)
             degree[dest[i]]++;
@@ -199,7 +213,7 @@ void gen_RMAT_graph(graph_t* G)
     max_weight = G->max_weight;
 
     /* Generate edge weights */
-    for (i=0; i<m; i++) {
+    for (edge_id_t i=0; i<m; i++) {
         dbl_weight[i]  = min_weight + (max_weight-min_weight)*drand48();
     }
 
@@ -225,11 +239,11 @@ void gen_RMAT_graph(graph_t* G)
     assert(G->weights != NULL);
 
     G->rowsIndices[0] = 0; 
-    for (i=1; i<=G->n; i++) {
+    for (vertex_id_t i=1; i<=G->n; i++) {
         G->rowsIndices[i] = G->rowsIndices[i-1] + degree[i-1];
     }
 
-    for (i=0; i<m; i++) {
+    for (edge_id_t i=0; i<m; i++) {
         u = src[i];
         v = dest[i];
         offset = degree[u]--;
@@ -250,93 +264,37 @@ void gen_RMAT_graph(graph_t* G)
     free(dbl_weight);
 }
 
-/* Breadth-First Search algorithm for counting traversed edges */
-void bfs(vertex_id_t root, graph_t *G, uint64_t *traversed_edges)
-{
-    int i,j;
-	uint32_t tmp_s = 0;
-    uint32_t nedges = 0;
-	int64_t *levels; 
-    /* level number */
-  	unsigned int numberOfLevel = 0;
-    /* number of nodes in level */
-	int numberOfNodesInLevel = 1;
-    
-    levels = (int64_t*)malloc(sizeof(int64_t) * G->n);
-    assert(levels != NULL);
-    /* initializing */
-	for ( i = 0; i < G->n; i++) {
-        levels[i] = -1;	
-    }
-	levels[root] = 0;
-	while ( numberOfNodesInLevel > 0 )	{
-		tmp_s = 0;
-		numberOfNodesInLevel = 0;
-		for ( i = 0; i < G->n; i++) {
-			if(levels[i] == numberOfLevel) {
-				for ( j = G->rowsIndices[i]; j < G->rowsIndices[i+1]; j++) {
-					if (levels[G->endV[j]] == -1) {
-						levels[G->endV[j]] = numberOfLevel + 1; 	
-						numberOfNodesInLevel++;
-					}
-				    tmp_s++;
-	  			}
-			}
-		}
-        numberOfLevel++;
-        nedges = nedges + tmp_s;
-	}
-    *traversed_edges = nedges;
-	free(levels);
-}
-
-/* Generate search parameters */
-void gen_search(graph_t *G)
-{
-    weight_t *dist = (weight_t *)malloc(G->n * sizeof(weight_t));
-
-    G->roots = (vertex_id_t *)malloc(G->nRoots * sizeof(vertex_id_t));
-    G->numTraversedEdges = (edge_id_t *)malloc(G->nRoots * sizeof(uint64_t));
-
-
-    for (int i = 0; i < G->nRoots; ++i) {
-        uint64_t bfs_nedges;
-        G->roots[i] = G->n * drand48(); 
-        bfs(G->roots[i], G, &bfs_nedges);
-        G->numTraversedEdges[i] = bfs_nedges;
-    }
-    free(dist);
-}
-
 /* write graph to file */
-void writeGraph(graph_t *G, char *filename)
+void writeBinaryGraph(graph_t *G, char *filename)
 {
     FILE *F = fopen(filename, "wb");
     if (!F) error(EXIT_FAILURE, 0, "Error in opening file %s", filename);
 	
     assert(fwrite(&G->n, sizeof(vertex_id_t), 1, F) == 1);
     
-    edge_id_t arity = G->m / G->n;
-    assert(fwrite(&arity, sizeof(edge_id_t), 1, F) == 1);
-    assert(fwrite(&G->directed, sizeof(bool), 1, F) == 1);
-    uint8_t align = 0;
-    assert(fwrite(&align, sizeof(uint8_t), 1, F) == 1);
+    assert(fwrite(&G->m, sizeof(edge_id_t), 1, F) == 1);
+    //assert(fwrite(&G->directed, sizeof(bool), 1, F) == 1);
+    //uint8_t align = 0;
+    //assert(fwrite(&align, sizeof(uint8_t), 1, F) == 1);
 
     assert(fwrite(G->rowsIndices, sizeof(edge_id_t), G->n+1, F) == G->n+1);
-    assert(fwrite(G->endV, sizeof(vertex_id_t), G->rowsIndices[G->n], F) == G->rowsIndices[G->n]);
-    
-    assert(fwrite(&G->nRoots, sizeof(uint32_t), 1, F) == 1);
-    assert(fwrite(G->roots, sizeof(vertex_id_t), G->nRoots, F) == G->nRoots);
-    assert(fwrite(G->numTraversedEdges, sizeof(edge_id_t), G->nRoots, F) == G->nRoots);
 
-    assert(fwrite(G->weights, sizeof(weight_t), G->m, F) == G->m);
+    for (eid_t i = 0; i < G->m; ++i) {
+        auto e = Edge{G->endV[i], G->weights[i]};
+        fwrite(&e, sizeof(Edge), 1, F);
+    }
+    //assert(fwrite(G->endV, sizeof(vertex_id_t), G->rowsIndices[G->n], F) == G->rowsIndices[G->n]);
+    //assert(fwrite(G->weights, sizeof(weight_t), G->m, F) == G->m);
+
     fclose(F);
 }
+
 
 /* print graph */
 void printGraph(graph_t *G)
 {
-	int i,j;
+	vertex_id_t i;
+    edge_id_t j;
 	for (i = 0; i < G->n; ++i) {
 		printf("%d:", i);
 		for (j=G->rowsIndices[i]; j < G->rowsIndices[i+1]; ++j)
@@ -351,7 +309,7 @@ int main (int argc, char** argv)
     init(argc, argv, &g);
     gen_RMAT_graph(&g);
     //printGraph(&g);
-    gen_search(&g);
-    writeGraph(&g, outFilename);
+    writeBinaryGraph(&g, outFilename);
+    
     return 0;
 }
