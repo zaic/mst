@@ -58,7 +58,7 @@ void init (int argc, char** argv, graph_t* G)
    		if (!strcmp(argv[i], "-out")) {
             no_file_name = 0;
             int l = strlen(argv[++i]) ;
-            strncpy(outFilename, argv[++i], (l+1 > FNAME_LEN-1 ? FNAME_LEN-1 : l+1) );
+            strncpy(outFilename, argv[i], (l+1 > FNAME_LEN-1 ? FNAME_LEN-1 : l+1) );
         }
         if (!strcmp(argv[i], "-text")) {
             writeTextFile = true;
