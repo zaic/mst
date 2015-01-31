@@ -331,13 +331,15 @@ bool doAll() {
         eid_t sumFutureEdges = 0;
         // for (int i = 0; i < threadsCount; ++i) sumFutureEdges += sumOfAllEdges[i][threadId];
 #ifdef USE_EDGE_STRUCT
-        ExtEdge *nextIterEdges = new ExtEdge[edgesCount]; // TODO fix: using sumFutureEdges
+        //ExtEdge *nextIterEdges = new ExtEdge[edgesCount]; // TODO fix: using sumFutureEdges
+        ExtEdge *nextIterEdges = (ExtEdge*)malloc(sizeof(ExtEdge) * edgesCount);
 #else
         weight_t *nextWeight   = (weight_t*)malloc(edgesCount * sizeof(weight_t));
         eid_t    *nextOrigId   = (eid_t*)   malloc(edgesCount * sizeof(eid_t));
         vid_t    *nextDestComp = (vid_t*)   malloc(edgesCount * sizeof(vid_t));
 #endif
-        eid_t *nextEdgesIds = new eid_t[vertexCount + 1]; // TODO array size can be reduced
+        //eid_t *nextEdgesIds = new eid_t[vertexCount + 1]; // TODO array size can be reduced
+        eid_t *nextEdgesIds = (eid_t*)malloc(sizeof(eid_t) * (vertexCount + 1));
         nextEdgesIds[0] = 0;
         eid_t edgeId = 0;
 
