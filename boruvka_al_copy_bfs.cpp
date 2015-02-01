@@ -239,17 +239,6 @@ bool doAll() {
                 if (bfs_component.size() > 1)
                     updated = 1;
                 fullComp[i].swap(bfs_component);
-                /*
-                int bestThreadId = upper_bound(vertexIds, vertexIds + threadsCount + 1, transfer) - vertexIds - 1;
-                for (vid_t j : fullComp[i]) {
-                    const int qthreadId = lower_bound(vertexIds, vertexIds + threadsCount + 1, j) - vertexIds - 1;
-                    if (edgesByThreads[qthreadId] < edgesByThreads[bestThreadId]) {
-                        transfer = j;
-                        bestThreadId = qthreadId;
-                    }
-                }
-                */
-                //edgesByThreads[bestThreadId] += sumEdgesCount;
 
                 set<pvv> compEdges;
                 for (vid_t jc : fullComp[i])
@@ -274,31 +263,67 @@ bool doAll() {
             sumOfAllEdges[threadId] = edgesCountOnNextIter;
         }
         times[iterationNumber][threadId][2] = rdtsc.end(threadId);
-
-#if 0
-#pragma omp for reduction(+:tmpTaskResult) nowait
-        for (vid_t i = 0; i < vertexCount; ++i) {
-            if (adjacencyLists[i].listSize == 0) continue;
-
-            vid_t oc = adjacencyLists[i].edges[0].destComp;
-
-            if (comp[oc] == i) {
-                if (i < oc) {
-                    comp[i] = i;
-                } else {
-                    comp[i] = oc;
-                    tmpTaskResult += adjacencyLists[i].edges[0].weight;
-                }
-            } else {
-                tmpTaskResult += adjacencyLists[i].edges[0].weight;
-                comp[i] = oc;
-            }
-        }
-        times[iterationNumber][threadId][2] = rdtsc.end(threadId);
-#endif
     }
 
+#ifdef USE_BARANCING
+    // barancing
+#pragma omp parallel
+    {
+        const int threadId = omp_get_thread_num();
+        stickThisThreadToCore(threadId);
+        rdtsc.start(threadId);
+
+        eid_t edgesWorkPerThreads[threadsCount];
+        memset(edgesWorkPerThreads, 0, sizeof(edgesWorkPerThreads));
+        vector<pvv> swaps;
+
+        const vid_t vto = vertexIds[threadId + 1];
+        for (vid_t i = vertexIds[threadId]; i < vto; ++i) if (!fullComp[i].empty()) {
+            // fullComp contains many vertexes from one thread
+            // time may be reduced if generate something line fullCompThreads, which will
+            // store only unique threads ids
+            random_shuffle(fullComp[i].begin(), fullComp[i].end());
+            vid_t moveWorkTo = *min_element(fullComp[i].begin(), fullComp[i].end(), [&](vid_t a, vid_t b) -> bool {
+                    int ta = a / vertexesPerThread;
+                    int tb = b / vertexesPerThread;
+                    return edgesWorkPerThreads[ta] < edgesWorkPerThreads[tb];
+                    });
+            int moveThreadId = moveWorkTo / vertexesPerThread;
+            eid_t compEdgesCount = accumulate(fullComp[i].begin(), fullComp[i].end(), eid_t(0), [&](eid_t sum, vid_t v) -> eid_t {
+                        const int vThreadId = v / vertexesPerThread;
+                        return sum + edgesIdsByThread[vThreadId][v + 1] - edgesIdsByThread[vThreadId][v];
+                        });
+            if (compEdgesCount > 1000000) {
+                Eo(compEdgesCount);
+            }
+            if (moveThreadId != threadId) {
+                swaps.push_back(make_pair(i, moveWorkTo));
+                comp[i] = moveWorkTo;
+                comp[moveWorkTo] = moveWorkTo;
+                edgesWorkPerThreads[moveThreadId] += compEdgesCount;
+            } else {
+                edgesWorkPerThreads[threadId] += compEdgesCount;
+            }
+        }
+#if 0
+#pragma omp critical
+        {
+        E(threadId); Eo(edgesWorkPerThreads[0]);
+        E(threadId); Eo(edgesWorkPerThreads[1]);
+        E(threadId); Eo(edgesWorkPerThreads[2]);
+        E(threadId); Eo(edgesWorkPerThreads[3]);
+        }
+#endif
+
 #pragma omp barrier
+        for (const pvv& i : swaps)
+            fullComp[i.first].swap(fullComp[i.second]);
+
+        times[iterationNumber][threadId][4] += rdtsc.end(threadId);
+    }
+#endif
+
+#pragma omp barrier // ???
 
     // pointer jumping
     int changed = 100500;
@@ -325,12 +350,13 @@ bool doAll() {
             times[iterationNumber][threadId][3] += rdtsc.end(threadId);
         }
     }
+    
 
     // merge edges lists
 #pragma omp parallel
     {
         const int threadId = omp_get_thread_num();
-        stickThisThreadToCore(threadId * 2);
+        stickThisThreadToCore(threadId);
         rdtsc.start(threadId);
 
         eid_t sumFutureEdges = 0;
@@ -352,8 +378,7 @@ bool doAll() {
             if (comp[v] == v && fullComp[v].size() > 1) { // if this vertex represents component and have edges to another component
                 // copy all edges
                 for (vid_t u : fullComp[v]) { // iterate over all vertexes in new component
-                    int ownedThread = 0;
-                    while (vertexIds[ownedThread + 1] <= u) ++ownedThread;
+                    int ownedThread = u / vertexesPerThread;
                     for (eid_t e = edgesIdsByThread[ownedThread][u]; e < edgesIdsByThread[ownedThread][u + 1]; ++e) {
 #ifdef USE_EDGE_STRUCT
                         if (comp[edgesByThread[ownedThread][e].destComp] == v) continue; // skip loops
@@ -375,7 +400,7 @@ bool doAll() {
             nextEdgesIds[v + 1] = edgeId;
         }
 
-        times[iterationNumber][threadId][4] = rdtsc.end(threadId);
+        times[iterationNumber][threadId][5] = rdtsc.end(threadId);
 #pragma omp barrier
 
 #ifdef USE_EDGE_STRUCT
@@ -528,7 +553,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "iteration %2d\n", i);
         for (int j = 0; j < threadsCount; ++j) {
             fprintf(stderr, "%02d:   ", j);
-            for (int k = 0; k < 5; ++k)
+            for (int k = 0; k < 6; ++k)
                 fprintf(stderr, "%.6lf ", times[i][j][k]);
             fputs("\n", stderr);
         }

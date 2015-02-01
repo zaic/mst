@@ -16,6 +16,7 @@ typedef double weight_t;
 typedef std::pair<vid_t, vid_t> pvv;
 typedef std::pair<eid_t, int> pei;
 typedef std::pair<weight_t, vid_t> pwv;
+typedef std::pair<vid_t, int> pvi;
 
 struct Edge {
     vid_t dest;
