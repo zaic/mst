@@ -155,26 +155,6 @@ bool doAll() {
             fullComp[i].clear();
         }
 
-#ifndef MESSAGES
-#pragma omp for
-        for (vid_t i = 0; i < vertexCount; ++i) if (comp[i] == i && bestEid[i] != -1) {
-            vid_t toi = comp[edges[bestEid[i]].dest]; // TODO improve pref using destComp from ExtEdge
-            //assert(comp[toi] != comp[i]);
-            gComp[i].pushBack(toi);
-            //gComp[toi].push_back(i);
-        }
-
-#pragma omp master
-        {
-            // build graph where vertexes are components, which were constructed on prev iteration
-            for (vid_t i = 0; i < vertexCount; ++i) if (comp[i] == i && bestEid[i] != -1) {
-                vid_t toi = comp[edges[bestEid[i]].dest]; // TODO improve pref using destComp from ExtEdge
-                //assert(comp[toi] != comp[i]);
-                //gComp[i].push_back(toi);
-                gComp[toi].push_back(i);
-            }
-        }
-#else
         for (int i = 0; i < threadsCount; ++i) {
             graph_messages[threadId][i].clear();
 #ifdef USE_SMALL_VECTOR
@@ -197,7 +177,6 @@ bool doAll() {
             for (const pvv e : graph_messages[i][threadId])
                 gComp[e.first].pushBack(e.second);
         times[iterationNumber][threadId][1] = rdtsc.end(threadId);
-#endif /* MESSAGES */
 #pragma omp barrier
 
         rdtsc.start(threadId);
