@@ -24,7 +24,7 @@ struct Edge {
 };
 
 struct EdgeDestCmp { bool operator()(const Edge& a, const Edge& b) const; };
-struct EdgeWeightCmp { bool operator()(const Edge& a, const Edge& b) const; };
+struct EdgeWeightCmp { bool operator()(const Edge& a, const Edge& b) const; }; // TODO inline
 
 extern vid_t vertexCount;
 extern eid_t edgesCount;
