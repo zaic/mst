@@ -2,7 +2,7 @@
 #include <cstdlib>
 #include <cstring>
 
-template<typename T, int64_t N>
+template<typename T, int64_t N, size_t AllocationFactor = 2, size_t InitAllocationFactor = 1>
 struct Vector {
     T onStack[N];
 
@@ -56,9 +56,9 @@ struct Vector {
         if (curSize == heapAllocated) {
             if (!heapAllocated) {
                 heapAllocated = N;
-                onHeap = (T*)malloc(sizeof(T) * heapAllocated);
+                onHeap = (T*)malloc(sizeof(T) * heapAllocated * InitAllocationFactor);
             } else {
-                int64_t newSize = heapAllocated * 2;
+                int64_t newSize = heapAllocated * AllocationFactor;
                 T *newHeap = (T*)malloc(sizeof(T) * newSize);
                 memcpy(newHeap, onHeap, sizeof(T) * curSize);
                 free(onHeap);
@@ -68,6 +68,10 @@ struct Vector {
         }
         onHeap[curSize] = value;
         vectorSize++;
+    }
+
+    void removeAt(int64_t index) {
+        at(index) = at(--vectorSize);
     }
 
     T& at(int64_t index) {
