@@ -74,8 +74,11 @@ double times[kMaxThreads][kMaxIterations][40];
 /*
  *  temporary dfs data
  */
-//vector<vid_t> *gComp; // adjacency list
+#ifdef USE_SMALL_VECTOR
 Vector<vid_t, 100> *gComp;
+#else
+vector<vid_t> *gComp; // adjacency list
+#endif
 vector<pvv> graph_messages[kMaxThreads][kMaxThreads];
 
 vector<vid_t> *fullComp; // contains entire new component
@@ -83,7 +86,7 @@ eid_t *bestEid; // TODO very temporary array
 /*
  *  temporary bfs data
  */
-const int kMaxBfsQueue = 1000;
+const int kMaxBfsQueue = 10000;
 vid_t bfs_queue[kMaxThreads][kMaxBfsQueue];
 signed char *bfs_visited[kMaxThreads];
 
@@ -174,8 +177,10 @@ bool doAll() {
 #else
         for (int i = 0; i < threadsCount; ++i) {
             graph_messages[threadId][i].clear();
+#ifdef USE_SMALL_VECTOR
             if (iterationNumber == 0)
-                graph_messages[threadId][i].reserve(vertexCount * 3 / 2 / threadsCount / threadsCount);
+                graph_messages[threadId][i].reserve(vertexCount * 4 / 2 / threadsCount / threadsCount);
+#endif
         }
 #pragma omp barrier
         const vid_t ito = vertexIds[threadId + 1];
@@ -374,7 +379,7 @@ bool doAll() {
 #pragma omp barrier
 
 #ifdef USE_EDGE_STRUCT
-        delete[] edgesByThread[threadId];
+        free(edgesByThread[threadId]);
         edgesByThread[threadId] = nextIterEdges;
 #else
         free(ExtEdge::weight[threadId]);
@@ -384,7 +389,7 @@ bool doAll() {
         free(ExtEdge::destComp[threadId]);
         ExtEdge::destComp[threadId] = nextDestComp;
 #endif
-        delete[] edgesIdsByThread[threadId];
+        free(edgesIdsByThread[threadId]);
         edgesIdsByThread[threadId] = nextEdgesIds;
     }
 
@@ -398,7 +403,11 @@ void doPrepare() {
     for (vid_t i = 0; i < vertexCount; ++i)
         comp[i] = i;
 
+#ifdef USE_SMALL_VECTOR
     gComp = new Vector<vid_t, 100>[vertexCount];
+#else
+    gComp = new vector<vid_t>[vertexCount];
+#endif
     fullComp = new vector<vid_t>[vertexCount];
     bestEid = new eid_t[vertexCount];
 
