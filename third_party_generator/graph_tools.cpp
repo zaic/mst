@@ -8,6 +8,7 @@
 #endif
 #include <string.h>
 #include "defs.h"
+#include "../gen.h"
 
 void readGraph(graph_t *G, char *filename)
 {
@@ -39,14 +40,23 @@ void writeBinaryGraph(graph_t *G, char *filename)
 {
     FILE *F = fopen(filename, "wb");
     if (!F) error(EXIT_FAILURE, 0, "Error in opening file %s", filename);
+	
     assert(fwrite(&G->n, sizeof(vertex_id_t), 1, F) == 1);
+    
     assert(fwrite(&G->m, sizeof(edge_id_t), 1, F) == 1);
-    assert(fwrite(&G->directed, sizeof(bool), 1, F) == 1);
-    uint8_t align = 0;
-    assert(fwrite(&align, sizeof(uint8_t), 1, F) == 1);
+    //assert(fwrite(&G->directed, sizeof(bool), 1, F) == 1);
+    //uint8_t align = 0;
+    //assert(fwrite(&align, sizeof(uint8_t), 1, F) == 1);
+
     assert(fwrite(G->rowsIndices, sizeof(edge_id_t), G->n+1, F) == G->n+1);
-    assert(fwrite(G->endV, sizeof(vertex_id_t), G->rowsIndices[G->n], F) == G->rowsIndices[G->n]);
-    assert(fwrite(G->weights, sizeof(weight_t), G->m, F) == G->m);
+
+    for (eid_t i = 0; i < G->m; ++i) {
+        auto e = Edge{G->endV[i], G->weights[i]};
+        fwrite(&e, sizeof(Edge), 1, F);
+    }
+    //assert(fwrite(G->endV, sizeof(vertex_id_t), G->rowsIndices[G->n], F) == G->rowsIndices[G->n]);
+    //assert(fwrite(G->weights, sizeof(weight_t), G->m, F) == G->m);
+
     fclose(F);
 }
 
