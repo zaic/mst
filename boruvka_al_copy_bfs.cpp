@@ -83,6 +83,9 @@ vector<pvv> graph_messages[kMaxThreads][kMaxThreads];
 
 vector<vid_t> *fullComp; // contains entire new component
 eid_t *bestEid; // TODO very temporary array
+#ifdef AL_BFS__SMPCOPY
+eid_t *fullCompEdgesCount; // count of edges in new component
+#endif
 /*
  *  temporary bfs data
  */
@@ -127,6 +130,9 @@ bool doAll() {
             assert(comp[v] == v);
             eid_t bestId = curEdgesIds[v];
             for (eid_t e = curEdgesIds[v] + 1; e < curEdgesIds[v + 1]; ++e) {
+#ifdef AL_BFS__SMPCOPY
+                if (comp[curEdges[e].destComp] == v) continue;
+#endif
 #ifdef USE_EDGE_STRUCT
                 if (curEdges[e] < curEdges[bestId])
 #else
@@ -268,12 +274,15 @@ bool doAll() {
                     return edgesWorkPerThreads[ta] < edgesWorkPerThreads[tb];
                     });
             int moveThreadId = moveWorkTo / vertexesPerThread;
-            eid_t compEdgesCount = accumulate(fullComp[i].begin(), fullComp[i].end(), eid_t(0), [&](eid_t sum, vid_t v) -> eid_t {
+            const eid_t compEdgesCount = accumulate(fullComp[i].begin(), fullComp[i].end(), eid_t(0), [&](eid_t sum, vid_t v) -> eid_t {
                         const int vThreadId = v / vertexesPerThread;
                         return sum + edgesIdsByThread[vThreadId][v + 1] - edgesIdsByThread[vThreadId][v];
-                        });
-            if (compEdgesCount > 1000000) {
-                Eo(compEdgesCount);
+                    });
+#ifdef AL_BFS__SMPCOPY
+            fullCompEdgesCount[moveWorkTo] = compEdgesCount;
+#endif
+            if (compEdgesCount > 10000000) {
+                E(compEdgesCount); Eo(moveWorkTo);
             }
             if (moveThreadId != threadId) {
                 swaps.push_back(make_pair(i, moveWorkTo));
@@ -287,10 +296,10 @@ bool doAll() {
 #if 0
 #pragma omp critical
         {
-        E(threadId); Eo(edgesWorkPerThreads[0]);
-        E(threadId); Eo(edgesWorkPerThreads[1]);
-        E(threadId); Eo(edgesWorkPerThreads[2]);
-        E(threadId); Eo(edgesWorkPerThreads[3]);
+            E(threadId); Eo(edgesWorkPerThreads[0]);
+            E(threadId); Eo(edgesWorkPerThreads[1]);
+            E(threadId); Eo(edgesWorkPerThreads[2]);
+            E(threadId); Eo(edgesWorkPerThreads[3]);
         }
 #endif
 
@@ -347,17 +356,25 @@ bool doAll() {
         weight_t *nextWeight   = (weight_t*)malloc(edgesCount * sizeof(weight_t));
         eid_t    *nextOrigId   = (eid_t*)   malloc(edgesCount * sizeof(eid_t));
         vid_t    *nextDestComp = (vid_t*)   malloc(edgesCount * sizeof(vid_t));
-#endif
+#endif /* USE_EDGE_STRUCT */
         //eid_t *nextEdgesIds = new eid_t[vertexCount + 1]; // TODO array size can be reduced
         eid_t *nextEdgesIds = (eid_t*)malloc(sizeof(eid_t) * (vertexCount + 1));
         nextEdgesIds[0] = 0;
         eid_t edgeId = 0;
 
+#ifdef AL_BFS__SMPCOPY
+        const vid_t MAX_SIZE_BOUND = vid_t(5e6);
+#endif /* AL_BFS__SMPCOPY */
         for (vid_t v = vertexIds[threadId]; v < vertexIds[threadId + 1]; ++v) { // iterate over all vertexes in this thread
-            if (comp[v] == v && fullComp[v].size() > 1) { // if this vertex represents component and have edges to another component
-                // copy all edges
+            if (comp[v] != v || fullComp[v].size() <= 1) { // if this vertex represents component and have edges to another component
+                nextEdgesIds[v + 1] = edgeId;
+                continue;
+            }
+#ifdef AL_BFS__SMPCOPY
+            if (fullCompEdgesCount[v] < MAX_SIZE_BOUND) { // copy all edges
+#endif /* AL_BFS__SMPCOPY */
                 for (vid_t u : fullComp[v]) { // iterate over all vertexes in new component
-                    int ownedThread = u / vertexesPerThread;
+                    const int ownedThread = u / vertexesPerThread;
                     for (eid_t e = edgesIdsByThread[ownedThread][u]; e < edgesIdsByThread[ownedThread][u + 1]; ++e) {
 #ifdef USE_EDGE_STRUCT
                         if (comp[edgesByThread[ownedThread][e].destComp] == v) continue; // skip loops
@@ -371,15 +388,66 @@ bool doAll() {
                         nextWeight[edgeId] = edgeWeidght;
                         nextOrigId[edgeId] = edgeOrigId;
                         nextDestComp[edgeId] = edgeDest;
-#endif
+#endif /* USE_EDGE_STRUCT */
                         ++edgeId;
                     }
                 }
+#ifdef AL_BFS__SMPCOPY
+            } else { // or reserve memory and copy them later
+                edgeId += fullCompEdgesCount[v];
             }
+#endif /* AL_BFS__SMPCOPY */
             nextEdgesIds[v + 1] = edgeId;
         }
 
-        times[iterationNumber][threadId][5] = rdtsc.end(threadId);
+#ifdef AL_BFS__SMPCOPY
+        times[iterationNumber][threadId][5] += rdtsc.end(threadId);
+#pragma omp barrier
+        rdtsc.start(threadId);
+
+        for (vid_t v = 0; v < vertexCount; ++v) { // iterate over all vertexes in all threads
+            if (comp[v] != v || fullComp[v].size() <= 1) continue; // if this vertex represents component and have edges to another component
+            if (fullCompEdgesCount[v] >= MAX_SIZE_BOUND) { // if this vertex represents component and have edges to another component
+#pragma omp critical
+                {
+                    E(threadId); Eo(v);
+                }
+                // copy all edges
+                const vid_t uidfrom = fullComp[v].size() * (threadId + 0) / threadsCount;
+                const vid_t uidto   = fullComp[v].size() * (threadId + 1) / threadsCount;
+                eid_t localEdgeId = nextEdgesIds[v]; // TODO ERROR
+                for (vid_t uid = 0; uid < uidfrom; ++uid) {
+                    const vid_t u = fullComp[v][uid];
+                    const int ownedThread = u / vertexesPerThread;
+                    localEdgeId += - edgesIdsByThread[ownedThread][u] + edgesIdsByThread[ownedThread][u + 1];
+                }
+                for (vid_t uid = uidfrom; uid < uidto; ++uid) { // iterate over all vertexes in new component
+                    const vid_t u = fullComp[v][uid];
+                    const int ownedThread = u / vertexesPerThread;
+                    for (eid_t e = edgesIdsByThread[ownedThread][u]; e < edgesIdsByThread[ownedThread][u + 1]; ++e) {
+#ifdef USE_EDGE_STRUCT
+                        //if (comp[edgesByThread[ownedThread][e].destComp] == v) continue; // skip loops
+                        // TODO memcpy ?
+                        nextIterEdges[localEdgeId] = edgesByThread[ownedThread][e]; // TODO ERROR
+#else
+#error fix required
+                        const vid_t edgeDest = ExtEdge::destComp[ownedThread][e];
+                        if (comp[edgeDest] == v) continue; // skip loops
+                        const eid_t edgeOrigId = ExtEdge::origId[ownedThread][e];
+                        const weight_t edgeWeidght = ExtEdge::weight[ownedThread][e];
+
+                        nextWeight[edgeId] = edgeWeidght;
+                        nextOrigId[edgeId] = edgeOrigId;
+                        nextDestComp[edgeId] = edgeDest;
+#endif /* USE_EDGE_STRUCT */
+                        ++localEdgeId;
+                    }
+                }
+            }
+        }
+#endif /* AL_BFS__SMPCOPY */
+
+        times[iterationNumber][threadId][5] += rdtsc.end(threadId);
 #pragma omp barrier
 
 #ifdef USE_EDGE_STRUCT
@@ -414,6 +482,9 @@ void doPrepare() {
 #endif
     fullComp = new vector<vid_t>[vertexCount];
     bestEid = new eid_t[vertexCount];
+#ifdef AL_BFS__SMPCOPY
+    fullCompEdgesCount = (eid_t*)malloc(sizeof(eid_t) * vertexCount);
+#endif
 
 
 #pragma omp parallel

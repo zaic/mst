@@ -112,6 +112,9 @@ double RDTSC::end(int timerId) {
 RDTSC rdtsc;
 
 int stickThisThreadToCore(int coreId) {
+#ifdef ON_HOME
+    coreId *= 1;
+#endif
     const int num_cores = sysconf(_SC_NPROCESSORS_ONLN);
     if (coreId >= num_cores) return 0;
 
