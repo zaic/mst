@@ -1,6 +1,8 @@
 #include <cinttypes>
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
+#include "gen.h"
 
 template<typename T, int64_t N, size_t AllocationFactor = 2, size_t InitAllocationFactor = 1>
 struct Vector {
@@ -89,3 +91,57 @@ struct TestVector {
 };
 extern TestVector testVector;
 #endif
+
+template<typename T, typename index_t = size_t>
+struct LargeVector {
+    T *data;
+    index_t size;
+
+    index_t requestedSize;
+
+    LargeVector() : data(NULL), size(0) { }
+    ~LargeVector() {
+        if (data)
+            free(data);
+    }
+
+    void init(T *dataPtr) {
+        size = 0;
+        data = dataPtr; //(T*)(malloc(sizeof(T) * 1000));
+    }
+
+    void push_back(const T& value) {
+        data[size++] = value;
+    }
+
+    void push_back(const LargeVector& other) {
+        /*
+        if (size + other.size > 1000) {
+            T *rdata = (T*)malloc(sizeof(T) * requestedSize);
+            memcpy(rdata, data, sizeof(T) * size);
+            free(data);
+            data = rdata;
+        }
+        */
+        memcpy(data + size, other.data, sizeof(T) * other.size);
+        size += other.size;
+    }
+
+    void swap(LargeVector& other) {
+        std::swap(data, other.data);
+        std::swap(size, other.size);
+    }
+
+    void removeAt(size_t index) {
+        size--;
+        if (index < size) std::swap(data[index], data[size]);
+    }
+
+    void clear() {
+        /*
+        if (data)
+            free(data);
+        size = 0;
+        */
+    }
+};
