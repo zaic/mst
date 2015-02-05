@@ -35,22 +35,9 @@ int iterationNumber;
 double times[kMaxThreads][kMaxIterations][40];
 
 
-/*
- *  temporary bfs data
- */
-#ifdef USE_SMALL_VECTOR
-Vector<vid_t, 100> *gComp;
-#else
-vector<vid_t> *gComp; // adjacency list
-#endif
-vector<pvv> graph_messages[kMaxThreads][kMaxThreads];
-
-//vector<vid_t> *fullComp; // contains entire new component
+// temporary min-edge data
 eid_t *bestEid; // TODO very temporary array
 vid_t *bestComp; // component, which is our pointer is pointing to
-const int kMaxBfsQueue = 10000;
-vid_t bfs_queue[kMaxThreads][kMaxBfsQueue];
-signed char *bfs_visited[kMaxThreads];
 
 /*
  *  FL data
@@ -150,10 +137,6 @@ bool doAll() {
             }
             bestEid[v] = curBestEid;
             bestComp[v] = (curBestEid == -1 ? -1 : comp[edges[curBestEid].dest]);
-#if 0
-            if (curBestEid != -1)
-                comp[v] = comp[edges[curBestEid].dest];
-#endif
         } else {
             bestEid[v] = -1;
         }
@@ -173,14 +156,6 @@ bool doAll() {
             weight_t curBestWeight = MAX_WEIGHT + 1e-3;
             eid_t curBestEid = -1;
             vector<FlData::ListElement>& data = FlData::list[v];
-
-#if 0
-#pragma omp critical
-            {
-                E(threadId); E(t); Eo(v);
-                Eo(data.size());
-            }
-#endif /* 0 or 1 */
 
             size_t ifrom = data.size() * (threadId + 0) / threadsCount;
             size_t ito   = data.size() * (threadId + 1) / threadsCount;
@@ -220,10 +195,6 @@ bool doAll() {
             }
             bestEid[v] = curBestEid;
             bestComp[v] = (curBestEid == -1 ? -1 : comp[edges[curBestEid].dest]);
-#if 0
-            if (curBestEid != -1)
-                comp[v] = comp[edges[curBestEid].dest];
-#endif
         }
 
         times[iterationNumber][threadId][1] += rdtsc.end(threadId);
@@ -258,117 +229,16 @@ bool doAll() {
                     comp[i] = i;
                 } else {
                     comp[i] = oc;
-                    //bestEid[i] = -1; //bestResult[i].weight = MAX_WEIGHT + 0.1; TODO remove ???
                     tmpTaskResult += edges[edge].weight;
                 }
             } else {
-                //tmpTaskResult += best.weight;
                 tmpTaskResult += edges[edge].weight;
                 comp[i] = oc;
-                //bestEid[i] = -1; //bestResult[i].weight = MAX_WEIGHT + 0.1; TODO remove ??
             }
-            bestEid[i] = -1;
+            bestEid[i] = -1; // TODO remove ?
         }
 
         times[iterationNumber][threadId][1] += rdtsc.end(threadId);
-#pragma omp barrier
-
-#if 0
-        //
-        // renum component
-        //
-        rdtsc.start(threadId);
-
-#pragma omp for
-        for (vid_t i = 0; i < vertexCount; ++i) {
-            gComp[i].clear();
-            fullComp[i].clear();
-        }
-
-        for (int i = 0; i < threadsCount; ++i) {
-            graph_messages[threadId][i].clear();
-#ifdef USE_SMALL_VECTOR
-            if (iterationNumber == 0)
-                graph_messages[threadId][i].reserve(vertexCount * 4 / 2 / threadsCount / threadsCount);
-#endif
-        }
-#pragma omp barrier
-        const vid_t ito = vertexIds[threadId + 1];
-        for (vid_t i = vertexIds[threadId]; i < ito; ++i) {
-            const eid_t curBestEid = bestEid[i];
-            if (curBestEid == -1) continue;
-            const vid_t toi = (iterationNumber == 0 ? edges[curBestEid].dest : comp[edges[curBestEid].dest]); // TODO improve pref using destComp from ExtEdge
-            const vid_t toi_thread = toi / vertexesPerThread;
-            graph_messages[threadId][toi_thread].push_back(pvv(toi, i));
-            gComp[i].pushBack(toi);
-        }
-#pragma omp barrier
-        for (int i = 0; i < threadsCount; ++i)
-            for (const pvv e : graph_messages[i][threadId])
-                gComp[e.first].pushBack(e.second);
-        times[iterationNumber][threadId][2] = rdtsc.end(threadId);
-#pragma omp barrier
-
-        rdtsc.start(threadId);
-        {
-            eid_t edgesByThreads[threadsCount];
-            memset(edgesByThreads, 0, sizeof(edgesByThreads));
-            eid_t edgesCountOnNextIter = 0;
-
-            signed char *visited = bfs_visited[threadId];
-            for (vid_t i = vertexIds[threadId]; i < vertexIds[threadId + 1]; ++i) if (!gComp[i].empty() && visited[i] < iterationNumber) {
-                // bfs
-                vector<vid_t> bfs_component(1, i);
-                {
-                    vid_t *que = bfs_queue[threadId];
-                    int from = 0, to = 1;
-                    que[from] = i;
-                    visited[i] = iterationNumber;
-                    while (from < to) {
-                        const vid_t wave_from = que[from++];
-                        for (int64_t wave_to_id = 0; wave_to_id < gComp[wave_from].size(); ++wave_to_id) {
-                            vid_t wave_to = gComp[wave_from].at(wave_to_id);
-                        //for (vid_t wave_to : gComp[wave_from]) 
-                            if (visited[wave_to] < iterationNumber) {
-                                visited[wave_to] = iterationNumber;
-                                //assert(to < max_bfs_queue_len);
-                                que[to++] = wave_to;
-                                bfs_component.push_back(wave_to);
-                            }
-                        }
-                    }
-                }
-                sort(bfs_component.begin(), bfs_component.end());
-                vid_t sum = std::accumulate(bfs_component.begin(), bfs_component.end(), vid_t(0));
-                vid_t transfer = bfs_component[sum % bfs_component.size()];
-                if (transfer / vertexesPerThread != threadId) continue;
-
-                if (bfs_component.size() > 1)
-                    updated = 1;
-                fullComp[i].swap(bfs_component);
-
-                set<pvv> compEdges;
-                for (vid_t jc : fullComp[i])
-                    for (int64_t to_id = 0; to_id < gComp[jc].size(); ++to_id) {
-                        vid_t to = gComp[jc].at(to_id);
-                    //for (vid_t to : gComp[jc])
-                        if (jc < to && !compEdges.count(pvv(jc, to))) {
-                            compEdges.insert(pvv(jc, to));
-                            if (comp[edges[bestEid[jc]].dest] == to)
-                                tmpTaskResult += edges[bestEid[jc]].weight;
-                            else
-                                tmpTaskResult += edges[bestEid[to]].weight;
-                        }
-                    }
-                //assert(transfer != i);
-                for (vid_t j : fullComp[i])
-                    comp[j] = transfer;
-
-                if (i != transfer) fullComp[i].swap(fullComp[transfer]);
-            }
-        }
-        times[iterationNumber][threadId][2] += rdtsc.end(threadId);
-#endif /* renum component stage */
     }
 
     //
@@ -438,12 +308,6 @@ void doPrepare() {
     for (vid_t i = 0; i < vertexCount; ++i)
         comp[i] = i;
 
-#ifdef USE_SMALL_VECTOR
-    gComp = new Vector<vid_t, 100>[vertexCount];
-#else
-    gComp = new vector<vid_t>[vertexCount];
-#endif
-    //fullComp = new vector<vid_t>[vertexCount];
     bestEid = new eid_t[vertexCount];
     bestComp = new vid_t[vertexCount];
 
@@ -484,21 +348,16 @@ void doPrepare() {
 #pragma omp barrier
 
         for (vid_t i = vertexIds[threadId]; i < vertexIds[threadId + 1]; ++i) {
-            //if (i % 10000 == 0) { Eo(i); }
 #ifdef USE_LARGE
             //FlData::list[i].init(vertexCount);
             FlData::list[i].init(FlData::listData + size_t(vertexCount) * i);
             FlData::list[i].push_back(FlData::ListElement{i, edgesIds[i], edgesIds[i + 1]});
 #else
             FlData::list[i].push_back(FlData::ListElement{i, edgesIds[i], edgesIds[i + 1]});
-#endif
+#endif /* USE_LARGE */
 
             std::sort(edges + edgesIds[i], edges + edgesIds[i + 1], EdgeWeightCmp());
         }
-
-        // bfs data
-        bfs_visited[threadId] = new signed char[vertexCount];
-        std::fill(bfs_visited[threadId], bfs_visited[threadId] + vertexCount, -1);
     }
 }
 
