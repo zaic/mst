@@ -65,7 +65,17 @@ namespace FlData {
     LargeVector<ListElement> *list;
 #else
     std::vector<ListElement> *list;
-#endif
+#endif /* USE_LARGE */
+
+#ifdef USE_BOUND
+    const int kVertexBound = 100000;
+    const int kBoundQueue = 10;
+
+    std::vector<vid_t> parallelProcess[kMaxThreads];
+    eid_t bestEidPerThread[kMaxThreads][kMaxThreads][kVertexBound]; // [owner thread][processing thread][vertex id]
+#endif /* USE_BOUND */
+
+
 
     void allocFalData() {
 #ifdef USE_LARGE
@@ -73,7 +83,7 @@ namespace FlData {
         list = (LargeVector<ListElement>*)malloc(sizeof(LargeVector<ListElement>) * vertexCount);
 #else
         list = new std::vector<ListElement>[vertexCount];
-#endif
+#endif /* USE_LARGE */
     }
 }
 
@@ -95,8 +105,15 @@ bool doAll() {
         //
         rdtsc.start(threadId);
 
+#ifdef USE_BOUND
+        FlData::parallelProcess[threadId].clear();
+#endif /* USE_BOUND */
         const vid_t vto = vertexIds[threadId + 1];
         for (vid_t v = vertexIds[threadId]; v < vto; ++v) if (comp[v] == v) {
+            if (FlData::list[v].size() >= FlData::kVertexBound) {
+                FlData::parallelProcess[threadId].push_back(v);
+                continue;
+            }
             weight_t curBestWeight = MAX_WEIGHT + 1e-3;
             eid_t curBestEid = -1;
             
@@ -107,7 +124,7 @@ bool doAll() {
 #else
             vector<FlData::ListElement>& data = FlData::list[v];
             for (size_t i = 0; i < data.size(); ) {
-#endif
+#endif /* USE_LARGE */
                 const vid_t curVertex = data[i].vertex;
                 eid_t curEdgeId = data[i].startEdgeId;
                 const eid_t endEdgeId = data[i].endEdgeId;
@@ -119,7 +136,7 @@ bool doAll() {
 #else
                     data[i] = data.back();
                     data.pop_back();
-#endif
+#endif /* USE_LARGE */
                     continue;
                 } else {
                     data[i].startEdgeId = curEdgeId; // ToDo omptimize: write only when changed
@@ -134,8 +151,72 @@ bool doAll() {
         } else {
             bestEid[v] = -1;
         }
+        assert(FlData::parallelProcess[threadId].size() < FlData::kBoundQueue);
 
         times[iterationNumber][threadId][0] = rdtsc.end(threadId);
+#pragma omp barrier
+        rdtsc.start(threadId);
+
+#ifdef USE_LARGE
+#error Ehhh...
+#endif /* USE_LARGE */
+
+#ifdef USE_BOUND
+        for (int t = 0; t < threadsCount; ++t) for (size_t vid = 0; vid < FlData::parallelProcess[t].size(); ++vid) {
+            const vid_t v = FlData::parallelProcess[t][vid];
+            weight_t curBestWeight = MAX_WEIGHT + 1e-3;
+            eid_t curBestEid = -1;
+            vector<FlData::ListElement>& data = FlData::list[v];
+
+#if 0
+#pragma omp critical
+            {
+                E(threadId); E(t); Eo(v);
+                Eo(data.size());
+            }
+#endif /* 0 or 1 */
+
+            size_t ifrom = data.size() * (threadId + 0) / threadsCount;
+            size_t ito   = data.size() * (threadId + 1) / threadsCount;
+            for (size_t i = ifrom; i < ito; ++i) {
+                const vid_t curVertex = data[i].vertex;
+                eid_t curEdgeId = data[i].startEdgeId;
+                const eid_t endEdgeId = data[i].endEdgeId;
+                while (curEdgeId < endEdgeId && comp[edges[curEdgeId].dest] == v) ++curEdgeId;
+                if (curEdgeId == endEdgeId) {
+                    // skip (instead of remove)
+                    continue;
+                } else {
+                    data[i].startEdgeId = curEdgeId; // ToDo omptimize: write only when changed
+                }
+                if (edges[curEdgeId].weight < curBestWeight) {
+                    curBestWeight = edges[curEdgeId].weight;
+                    curBestEid = curEdgeId;
+                }
+            }
+            FlData::bestEidPerThread[t][threadId][vid] = curBestEid;
+        }
+#endif /* USE_BOUND */
+        times[iterationNumber][threadId][1] = rdtsc.end(threadId);
+#pragma omp barrier
+        rdtsc.start(threadId);
+
+        for (size_t vid = 0; vid < FlData::parallelProcess[threadId].size(); ++vid) {
+            const vid_t v= FlData::parallelProcess[threadId][vid];
+            weight_t curBestWeight = MAX_WEIGHT + 1e-3;
+            eid_t curBestEid = -1;
+            for (int t = 0; t < threadsCount; ++t) {
+                eid_t teid = FlData::bestEidPerThread[threadId][t][vid];
+                if (teid != -1 && edges[teid].weight < curBestWeight) {
+                    curBestWeight = edges[teid].weight;
+                    curBestEid = teid;
+                }
+            }
+            bestEid[v] = curBestEid;
+        }
+
+        times[iterationNumber][threadId][1] += rdtsc.end(threadId);
+
 #pragma omp barrier
 
         //
@@ -170,7 +251,7 @@ bool doAll() {
         for (int i = 0; i < threadsCount; ++i)
             for (const pvv e : graph_messages[i][threadId])
                 gComp[e.first].pushBack(e.second);
-        times[iterationNumber][threadId][1] = rdtsc.end(threadId);
+        times[iterationNumber][threadId][2] = rdtsc.end(threadId);
 #pragma omp barrier
 
         rdtsc.start(threadId);
@@ -231,7 +312,7 @@ bool doAll() {
                 if (i != transfer) fullComp[i].swap(fullComp[transfer]);
             }
         }
-        times[iterationNumber][threadId][2] = rdtsc.end(threadId);
+        times[iterationNumber][threadId][2] += rdtsc.end(threadId);
     }
 
     // pointer jumping
@@ -285,7 +366,7 @@ bool doAll() {
                         FlData::list[u].insert(FlData::list[u].end(), FlData::list[v].begin(), FlData::list[v].end());
                         FlData::list[u].swap(FlData::list[v]);
                     }
-#endif
+#endif /* USE_LARGE */
                     FlData::list[u].clear();
                 }
             }
@@ -408,7 +489,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "iteration %2d\n", i);
         for (int j = 0; j < threadsCount; ++j) {
             fprintf(stderr, "%02d:   ", j);
-            for (int k = 0; k < 5; ++k) // find-min, message, bfs, pj, merge
+            for (int k = 0; k < 5; ++k) // find-min-local, find-min-large-parallel, message&bfs, pj, merge
                 fprintf(stderr, "%.6lf ", times[i][j][k]);
             fputs("\n", stderr);
         }

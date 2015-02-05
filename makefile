@@ -42,7 +42,7 @@ boruvka_fl_bfs_list.out: gen.o boruvka_fl_bfs_list.cpp vector.h makefile.h
 	${CXX} ${CXXFLAGS} $^ -o $@
 
 boruvka_fl_bfs_vector.out: gen.o boruvka_fl_bfs_vector.cpp vector.h makefile.h
-	${CXX} ${CXXFLAGS} $^ -o $@
+	${CXX} ${CXXFLAGS} -DUSE_BOUND $^ -o $@
 
 
 
