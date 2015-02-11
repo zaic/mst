@@ -6,6 +6,7 @@
 #include <tuple>
 #include <vector>
 #include <numeric>
+#include "stat.h"
 #ifdef __clang__
 #include "omp.h"
 #else
@@ -36,6 +37,9 @@ struct Result {
 Result **localResult, *bestResult;
 
 double times[kMaxThreads][kMaxIterations][40];
+Stat<eid_t> skipEdges;
+Stat<vid_t> visitedVertexes;
+Stat<vid_t> allVertexes;
 
 
 
@@ -64,10 +68,39 @@ bool doAll() {
             result[i].weight = MAX_WEIGHT + 0.1;
         }
 #endif
+
+#if 0
+        if (iterationNumber > 2) {
+            for (vid_t v = vertexIds[threadId]; v < vertexIds[threadId + 1]; ++v) {
+                const eid_t edgesStart = startEdgesIds[v];
+                const eid_t edgesEnd = edgesIds[v + 1];
+                if (edgesStart >= edgesEnd) continue;
+
+                const vid_t cv = comp[v];
+                eid_t newEdgesStart = edgesStart;
+
+                for (; newEdgesStart < edgesEnd; ++newEdgesStart) {
+                    const vid_t u = edges[newEdgesStart].dest;
+                    const vid_t cu = comp[u];
+                    if (cu == cv) {
+                        continue;
+                    }
+                    break;
+                }
+                if (newEdgesStart != edgesStart) startEdgesIds[v] = newEdgesStart;
+            }
+        }
+#endif
+
+        eid_t se = 0;
+        vid_t vv = 0;
+        vid_t va = 0;
         for (vid_t v = vertexIds[threadId]; v < vertexIds[threadId + 1]; ++v) {
             const eid_t edgesStart = startEdgesIds[v];
             const eid_t edgesEnd = edgesIds[v + 1];
+            ++va;
             if (edgesStart >= edgesEnd) continue;
+            ++vv;
             
             const vid_t cv = comp[v];
             weight_t startWeight = edges[edgesStart].weight;
@@ -79,7 +112,10 @@ bool doAll() {
 
                 const vid_t u = edges[e].dest;
                 const vid_t cu = comp[u];
-                if (cu == cv) continue;
+                if (cu == cv) {
+                    ++se;
+                    continue;
+                }
 
                 if (weight < result[cv].weight || (weight == result[cv].weight && cu < result[cv].destComp)) {
                     result[cv] = Result{edges[e].weight, cu, v, u};
@@ -92,6 +128,9 @@ bool doAll() {
 
             if (newEdgesStart != edgesStart) startEdgesIds[v] = newEdgesStart;
         }
+        skipEdges.set(threadId, iterationNumber, se);
+        visitedVertexes.set(threadId, iterationNumber, vv);
+        allVertexes.set(threadId, iterationNumber, vv);
         times[iterationNumber][threadId][0] = rdtsc.end(threadId);
 
 #pragma omp barrier
@@ -307,6 +346,10 @@ int main(int argc, char *argv[]) {
         }
     }
 #endif
+
+    skipEdges.print(iterationNumber, threadsCount, "skip edges", "%lld ");
+    //visitedVertexes.print(iterationNumber, threadsCount, "visited vertexes", "%d ");
+    //allVertexes.print(iterationNumber, threadsCount, "all vertexes", "%d ");
 
     return 0;
 }

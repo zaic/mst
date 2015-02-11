@@ -54,7 +54,7 @@ boruvka_fl_pj.out: gen.o boruvka_fl_pj.cpp vector.h makefile.h
 
 
 
-gen.o: gen.h gen.cpp makefile
+gen.o: gen.h gen.cpp stat.h makefile
 	${CXX} ${CXXFLAGS} gen.cpp -c -o $@
 
 vector_test.out: vector.h vector.cpp makefile
