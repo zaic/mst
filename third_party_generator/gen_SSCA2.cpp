@@ -68,7 +68,7 @@ void gen_SSCA2_graph(graph_t* g)
     uint32_t MaxCliqueSize;
     uint32_t MaxParallelEdges = 1;
     double ProbUnidirectional = 1.0;
-    double ProbIntercliqueEdges = 0.05;
+    double ProbIntercliqueEdges = 0.1;// 0.05;
 	uint32_t i_cluster, currCluster;
 	uint32_t *startV, *endV, *d;
 	uint32_t estNumEdges, edgeNum;
@@ -93,7 +93,7 @@ void gen_SSCA2_graph(graph_t* g)
 	/*		generate clusters		*/
 	/*----------------------------------------------*/
     
-    MaxCliqueSize = (uint32_t) floor(pow(2, (double) (g->scale/3.0))); 
+    MaxCliqueSize = 49; //(uint32_t) floor(pow(2, (double) (g->scale/3.0))); 
   	/* Estimate number of clusters required to make up 
 	 * TotVertices and pad by 25% */
 	estTotClusters = 1.25 * TotVertices / (MaxCliqueSize/2);
