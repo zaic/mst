@@ -57,7 +57,7 @@ namespace FlData {
 
 #ifdef USE_BOUND
     const int kVertexBound = 100000;
-    const int kBoundQueue = 10;
+    const int kBoundQueue = 100;
 
     std::vector<vid_t> parallelProcess[kMaxThreads];
     eid_t bestEidPerThread[kMaxThreads][kMaxThreads][kVertexBound]; // [owner thread][processing thread][vertex id]
@@ -166,9 +166,10 @@ bool doAll() {
                 while (curEdgeId < endEdgeId && comp[edges[curEdgeId].dest] == v) ++curEdgeId;
                 if (curEdgeId == endEdgeId) {
                     // skip (instead of remove)
+                    // TODO: set startEdgeId
                     continue;
                 } else {
-                    data[i].startEdgeId = curEdgeId; // ToDo omptimize: write only when changed
+                    data[i].startEdgeId = curEdgeId; // ToDo omptimize: write only when changed. or remove
                 }
                 if (edges[curEdgeId].weight < curBestWeight) {
                     curBestWeight = edges[curEdgeId].weight;
@@ -225,7 +226,9 @@ bool doAll() {
             vid_t oc = bestComp[i]; // best.destComp;
 
             if (comp[oc] == i) {
-                if (i < oc) {
+                //if (i < oc) {
+                bool crazeCond = ((i^oc)&1);
+                if ((crazeCond && i < oc) || (!crazeCond && i > oc)) {
                     comp[i] = i;
                 } else {
                     comp[i] = oc;
@@ -258,7 +261,14 @@ bool doAll() {
                 if (myComp == i) continue;
                 vid_t parentComp = comp[myComp];
                 if (parentComp == i) {
+#if 0
                     comp[i] = min(i, myComp);
+#else
+                    if (min(i, myComp)&1)
+                        comp[i] = min(i, myComp);
+                    else
+                        comp[i] = max(i, myComp);
+#endif
                     changed = 1;
                 } else if (myComp != parentComp) {
                     comp[i] = parentComp;
@@ -315,9 +325,11 @@ void doPrepare() {
     {
         const int threadId = omp_get_thread_num();
         const int curThreadsCount = omp_get_num_threads();
+        stickThisThreadToCore(threadId);
 #pragma omp master
         {
             threadsCount = curThreadsCount;
+            assert(threadsCount < kMaxThreads);
 
             vertexIds = new vid_t[threadsCount + 1];
             vertexIds[0] = 0;
