@@ -19,7 +19,11 @@ vid_t *comp;
 weight_t taskResult;
 
 int threadsCount;
-vid_t *vertexIds;
+#ifndef ON_NUMA
+#error NUMA only
+#else
+vid_t vertexesPerThread;
+#endif
 eid_t *startEdgesIds;
 int iterationNumber;
 
@@ -33,15 +37,16 @@ struct Result {
     }
 };
 
-Result **localResult, *bestResult;
+Result *bestResult;
 
 const int kMaxIterations = 30;
 const int kMaxThreads = 20;
-double times[kMaxThreads][kMaxIterations][40];
+double times[kMaxIterations][kMaxThreads][40];
 
 
 
 bool doAll() {
+    Eo(iterationNumber);
     int updated = 0; // reduce stage 
     weight_t tmpTaskResult = 0.0; // merge stage
 
@@ -54,37 +59,32 @@ bool doAll() {
         // find min
         // 
         rdtsc.start(threadId);
-        auto result = localResult[threadId];
+        //auto result = localResult[threadId];
 
-#if 0
-        for (vid_t i = vertexIds[threadId]; i < vertexIds[threadId + 1]; ++i) {
-            vid_t icomp = comp[i];
-            result[icomp] = make_pair(MAX_WEIGHT + 0.1, 0);
-        }
-#elif 0
-        for (vid_t i = 0; i < vertexCount; ++i) {
-            result[i].weight = MAX_WEIGHT + 0.1;
-        }
-#endif
-        for (vid_t v = vertexIds[threadId]; v < vertexIds[threadId + 1]; ++v) {
+        const vid_t startVertex = int64_t(vertexCount) * threadId / threadsCount;
+        for (vid_t vo = 0; vo < vertexCount; ++vo) { // iterate over all vertexes with specified offset
+            const vid_t v = vo; // TODO (startVertex + vo) % vertexCount;
+            const vid_t cv = comp[v];
+            const int cvThread = cv / vertexesPerThread;
+            if (cvThread != threadId) continue; // skip vertexes, which belong to another thread
+
             const eid_t edgesStart = startEdgesIds[v];
             const eid_t edgesEnd = edgesIds[v + 1];
             if (edgesStart >= edgesEnd) continue;
             
-            const vid_t cv = comp[v];
             weight_t startWeight = edges[edgesStart].weight;
             eid_t newEdgesStart = edgesStart;
 
             for (eid_t e = edgesStart; e < edgesEnd; ++e) {
                 weight_t weight = edges[e].weight;
-                if (weight > result[cv].weight) break;
+                if (weight > bestResult[cv].weight) break;
 
                 const vid_t u = edges[e].dest;
                 const vid_t cu = comp[u];
                 if (cu == cv) continue;
 
-                if (weight < result[cv].weight || (weight == result[cv].weight && cu < result[cv].destComp)) {
-                    result[cv] = Result{edges[e].weight, cu, v, u};
+                if (weight < bestResult[cv].weight || (weight == bestResult[cv].weight && cu < bestResult[cv].destComp)) {
+                    bestResult[cv] = Result{edges[e].weight, cu, v, u};
                 }
                 if (weight > startWeight) {
                     startWeight = weight;
@@ -103,24 +103,6 @@ bool doAll() {
         //
         rdtsc.start(threadId);
 #if 0
-#pragma omp for reduction(+:updated) nowait
-        for (vid_t i = 0; i < vertexCount; ++i) {
-            if (comp[i] == i) {
-                Result best{MAX_WEIGHT + 0.1, 0, 0, 0};
-                for (int j = 0; j < threadsCount; ++j) {
-                    best = min(best, localResult[j][i]); // !
-                    localResult[j][i].weight = MAX_WEIGHT + 0.1;
-                }
-                bestResult[i] = best;
-                if (best.weight <= MAX_WEIGHT) {
-                    comp[i] = best.destComp;
-                    updated = 1;
-                }
-            } else {
-                //bestResult[i].weight = MAX_WEIGHT + 0.1;
-            }
-        }
-#else
         for (int treeIteration = 0; (1 << treeIteration) < threadsCount; treeIteration++) {
             const int reduceTo = ((threadId >> (treeIteration + 1)) << (treeIteration + 1));
             const int reduceFrom = reduceTo + (1 << treeIteration);
@@ -138,19 +120,20 @@ bool doAll() {
             }
 #pragma omp barrier
         }
+#endif
 
 #pragma omp for reduction(+:updated) nowait
         for (vid_t i = 0; i < vertexCount; ++i) {
             if (comp[i] == i) {
-                bestResult[i] = localResult[0][i];
-                if (localResult[0][i].weight <= MAX_WEIGHT) {
-                    comp[i] = localResult[0][i].destComp;
+                //bestResult[i] = localResult[0][i];
+                if (bestResult[i].weight <= MAX_WEIGHT) {
+                    comp[i] = bestResult[i].destComp;
                     updated = 1;
                 }
-                localResult[0][i].weight = MAX_WEIGHT + 0.1;
+                //bestResult[i].weight = MAX_WEIGHT + 0.1;
             }
         }
-#endif
+
         times[iterationNumber][threadId][1] = rdtsc.end(threadId);
         // if (!updated) return false; TODO
 
@@ -174,6 +157,7 @@ bool doAll() {
                     bestResult[i].weight = MAX_WEIGHT + 0.1;
                     tmpTaskResult += best.weight;
                 }
+                bestResult[i].weight = MAX_WEIGHT + 0.1;
             } else {
                 tmpTaskResult += best.weight;
                 comp[i] = oc;
@@ -214,10 +198,13 @@ bool doAll() {
 }
 
 void doPrepare() {
+#ifndef ON_NUMA
     vertexIds = new vid_t[vertexCount + 1];
     vertexIds[0] = 0;
+#endif
 
     comp = new vid_t[vertexCount];
+    // TODO omp for
     for (vid_t i = 0; i < vertexCount; ++i)
         comp[i] = i;
 
@@ -228,9 +215,11 @@ void doPrepare() {
     {
         const int threadId = omp_get_thread_num();
         const int curThreadsCount = omp_get_num_threads();
+        // TODO stick thread
         if (!threadId) {
             threadsCount = curThreadsCount;
-            localResult = new Result*[threadsCount];
+            vertexesPerThread = vertexCount / threadsCount;
+            assert(vertexesPerThread * threadsCount == vertexCount);
         }
 #pragma omp barrier
 
@@ -246,14 +235,15 @@ void doPrepare() {
             }
         }
 #else
-        vertexIds[threadId + 1] = int64_t(vertexCount) * (threadId + 1) / threadsCount;
+        //vertexIds[threadId + 1] = int64_t(vertexCount) * (threadId + 1) / threadsCount;
 #endif
 
-        localResult[threadId] = new Result[vertexCount];
+#pragma omp for nowait
         for (vid_t i = 0; i < vertexCount; ++i)
-            localResult[threadId][i] = Result{MAX_WEIGHT + 0.1, 0, 0, 0};
+            bestResult[i] = Result{MAX_WEIGHT + 0.1, 0, 0, 0};
 
-        for (vid_t i = vertexIds[threadId]; i < vertexIds[threadId + 1]; ++i) {
+#pragma omp for nowait
+        for (vid_t i = 0; i < vertexCount; ++i) {
             sort(edges + edgesIds[i], edges + edgesIds[i + 1], EdgeWeightCmp());
             startEdgesIds[i] = edgesIds[i];
         }
