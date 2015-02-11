@@ -36,8 +36,6 @@ struct ExtEdge {
 };
 
 
-const int kMaxIterations = 40;
-const int kMaxThreads = 20;
 double times[kMaxThreads][kMaxIterations][40];
 
 struct EdgeList {

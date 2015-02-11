@@ -17,8 +17,6 @@
 using namespace std;
 
 typedef pair<weight_t, eid_t> pwe;
-const int kMaxIterations = 40;
-const int kMaxThreads = 20;
 
 vid_t *comp;
 weight_t taskResult;

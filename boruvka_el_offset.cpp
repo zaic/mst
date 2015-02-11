@@ -39,8 +39,6 @@ struct Result {
 
 Result *bestResult;
 
-const int kMaxIterations = 30;
-const int kMaxThreads = 20;
 double times[kMaxIterations][kMaxThreads][40];
 
 

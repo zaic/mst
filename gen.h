@@ -26,6 +26,9 @@ struct Edge {
 struct EdgeDestCmp { bool operator()(const Edge& a, const Edge& b) const; };
 struct EdgeWeightCmp { bool operator()(const Edge& a, const Edge& b) const; }; // TODO inline
 
+const int kMaxThreads = 20;
+const int kMaxIterations = 30;
+
 extern vid_t vertexCount;
 extern eid_t edgesCount;
 extern eid_t *edgesIds;
