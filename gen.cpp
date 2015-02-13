@@ -64,6 +64,66 @@ void readAll(char *filename) {
         fread(edges + edgeBegin, sizeof(Edge), edgeEnd - edgeBegin, f);
     }
 
+#ifdef USE_REORDER
+    stickThisThreadToCore(0);
+
+    bool *visit = new bool[vertexCount];
+    vid_t *que = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount));
+    vid_t *rev = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount));
+    vid_t fr = 0, bc = 0;
+    for (vid_t i = 0; i < vertexCount; ++i) if (!visit[i]) {
+        que[bc++] = i;
+        while (fr < bc) {
+            const vid_t v = que[fr++];
+            visit[v] = true;
+            for (eid_t e = edgesIds[v]; e < edgesIds[v + 1]; ++e) {
+                const vid_t u = edges[e].dest;
+                if (visit[u]) continue;
+                visit[u] = true;
+                que[bc++] = u;
+            }
+        }
+    }
+    assert(bc == vertexCount);
+    delete[] visit;
+
+#pragma omp for
+    for (vid_t i = 0; i < vertexCount; ++i)
+        rev[que[i]] = i;
+
+    eid_t *nextEdgesIds = static_cast<eid_t*>(malloc(sizeof(eid_t) * (vertexCount + 1)));
+    Edge *nextEdges = static_cast<Edge*>(malloc(sizeof(Edge) * edgesCount));
+    nextEdgesIds[0] = 0;
+    for (int i = 0; i < curThreadsCount; ++i) {
+        stickThisThreadToCore(i);
+        const vid_t vertexBegin = int64_t(vertexCount + 1) * i / curThreadsCount;
+        const vid_t vertexEnd   = int64_t(vertexCount + 1) * (i + 1) / curThreadsCount;
+        for (vid_t v = vertexBegin; v < vertexEnd; ++v) {
+            const vid_t nextv = que[v];
+            nextEdgesIds[v + 1] = nextEdgesIds[v] + edgesIds[nextv + 1] - edgesIds[nextv];
+        }
+    }
+#pragma omp parallel
+    {
+        const int i = omp_get_thread_num();
+        stickThisThreadToCore(i);
+        const vid_t vertexBegin = int64_t(vertexCount + 1) * i / curThreadsCount;
+        const vid_t vertexEnd   = int64_t(vertexCount + 1) * (i + 1) / curThreadsCount;
+        for (vid_t v = vertexBegin; v < vertexEnd; ++v) {
+            const vid_t nextv = que[v];
+            for (eid_t e = edgesIds[nextv]; e < edgesIds[nextv + 1]; ++e) {
+                nextEdges[nextEdgesIds[v] + e - edgesIds[nextv]] = edges[e];
+                nextEdges[nextEdgesIds[v] + e - edgesIds[nextv]].dest = rev[edges[e].dest];
+            }
+        }
+    }
+    free(que);
+    free(edges);
+    free(edgesIds);
+    edges = nextEdges;
+    edgesIds = nextEdgesIds;
+#endif /* USE_REORDER */
+
     fclose(f);
 }
 
@@ -112,11 +172,16 @@ double RDTSC::end(int timerId) {
 RDTSC rdtsc;
 
 int stickThisThreadToCore(int coreId) {
+    const int num_cores = sysconf(_SC_NPROCESSORS_ONLN);
 #ifdef ON_HOME
     coreId *= 2;
     coreId += 1;
-#endif
-    const int num_cores = sysconf(_SC_NPROCESSORS_ONLN);
+#endif /* ON_HOME */
+#ifdef USE_HYPERTHREADING
+    int hardwareCoreId = coreId / 2;
+    int htOffset = num_cores / 2;
+    coreId = hardwareCoreId + htOffset * (coreId % 2);
+#endif /* USE_HYPERTHREADING */
     if (coreId >= num_cores) return 0;
 
     cpu_set_t cpuset;

@@ -37,9 +37,7 @@ struct Result {
 Result **localResult, *bestResult;
 
 double times[kMaxThreads][kMaxIterations][40];
-Stat<eid_t> skipEdges;
-Stat<vid_t> visitedVertexes;
-Stat<vid_t> allVertexes;
+//Stat<eid_t> skipEdges;
 
 
 
@@ -58,19 +56,8 @@ bool doAll() {
         rdtsc.start(threadId);
         auto result = localResult[threadId];
 
-#if 0
-        for (vid_t i = vertexIds[threadId]; i < vertexIds[threadId + 1]; ++i) {
-            vid_t icomp = comp[i];
-            result[icomp] = make_pair(MAX_WEIGHT + 0.1, 0);
-        }
-#elif 0
-        for (vid_t i = 0; i < vertexCount; ++i) {
-            result[i].weight = MAX_WEIGHT + 0.1;
-        }
-#endif
-
-#if 0
-        if (iterationNumber > 2) {
+#ifdef USE_SKIP_LOOPS
+        if (iterationNumber > USE_SKIP_LOOPS) {
             for (vid_t v = vertexIds[threadId]; v < vertexIds[threadId + 1]; ++v) {
                 const eid_t edgesStart = startEdgesIds[v];
                 const eid_t edgesEnd = edgesIds[v + 1];
@@ -82,25 +69,21 @@ bool doAll() {
                 for (; newEdgesStart < edgesEnd; ++newEdgesStart) {
                     const vid_t u = edges[newEdgesStart].dest;
                     const vid_t cu = comp[u];
-                    if (cu == cv) {
-                        continue;
-                    }
+                    if (cu == cv) continue;
                     break;
                 }
                 if (newEdgesStart != edgesStart) startEdgesIds[v] = newEdgesStart;
             }
         }
-#endif
+        times[iterationNumber][threadId][4] = rdtsc.end(threadId);
+#endif /* USE_SKIP_LOOPS */
 
+        rdtsc.start(threadId);
         eid_t se = 0;
-        vid_t vv = 0;
-        vid_t va = 0;
         for (vid_t v = vertexIds[threadId]; v < vertexIds[threadId + 1]; ++v) {
             const eid_t edgesStart = startEdgesIds[v];
             const eid_t edgesEnd = edgesIds[v + 1];
-            ++va;
             if (edgesStart >= edgesEnd) continue;
-            ++vv;
             
             const vid_t cv = comp[v];
             weight_t startWeight = edges[edgesStart].weight;
@@ -113,7 +96,7 @@ bool doAll() {
                 const vid_t u = edges[e].dest;
                 const vid_t cu = comp[u];
                 if (cu == cv) {
-                    ++se;
+                    //++se;
                     continue;
                 }
 
@@ -128,9 +111,7 @@ bool doAll() {
 
             if (newEdgesStart != edgesStart) startEdgesIds[v] = newEdgesStart;
         }
-        skipEdges.set(threadId, iterationNumber, se);
-        visitedVertexes.set(threadId, iterationNumber, vv);
-        allVertexes.set(threadId, iterationNumber, vv);
+        //skipEdges.set(threadId, iterationNumber, se);
         times[iterationNumber][threadId][0] = rdtsc.end(threadId);
 
 #pragma omp barrier
@@ -199,7 +180,7 @@ bool doAll() {
         rdtsc.start(threadId);
 #pragma omp for reduction(+:tmpTaskResult) nowait
         for (vid_t i = 0; i < vertexCount; ++i) {
-            Result best = bestResult[i];
+            const Result& best = bestResult[i];
             if (best.weight > MAX_WEIGHT) continue;
             vid_t oc = best.destComp;
 
@@ -340,16 +321,14 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "iteration %2d\n", i);
         for (int j = 0; j < threadsCount; ++j) {
             fprintf(stderr, "%02d:   ", j);
-            for (int k = 0; k < 4; ++k)
+            for (int k = 0; k < 5; ++k)
                 fprintf(stderr, "%.6lf ", times[i][j][k]);
             fputs("\n", stderr);
         }
     }
 #endif
 
-    skipEdges.print(iterationNumber, threadsCount, "skip edges", "%lld ");
-    //visitedVertexes.print(iterationNumber, threadsCount, "visited vertexes", "%d ");
-    //allVertexes.print(iterationNumber, threadsCount, "all vertexes", "%d ");
+    //skipEdges.print(iterationNumber, threadsCount, "skip edges", "%lld ");
 
     return 0;
 }
