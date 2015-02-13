@@ -61,7 +61,7 @@ bool doAll() {
 
         const vid_t startVertex = int64_t(vertexCount) * threadId / threadsCount;
         for (vid_t vo = 0; vo < vertexCount; ++vo) { // iterate over all vertexes with specified offset
-            const vid_t v = vo; // TODO (startVertex + vo) % vertexCount;
+            const vid_t v = (startVertex + vo) % vertexCount;
             const vid_t cv = comp[v];
             const int cvThread = cv / vertexesPerThread;
             if (cvThread != threadId) continue; // skip vertexes, which belong to another thread
@@ -213,7 +213,8 @@ void doPrepare() {
     {
         const int threadId = omp_get_thread_num();
         const int curThreadsCount = omp_get_num_threads();
-        // TODO stick thread
+        stickThisThreadToCore(threadId);
+
         if (!threadId) {
             threadsCount = curThreadsCount;
             vertexesPerThread = vertexCount / threadsCount;
