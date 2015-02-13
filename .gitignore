@@ -30,3 +30,5 @@ src.tar.bz2
 src.tar.xz
 boruvka_el_calcComponentSize.cpp
 ToDo.txt
+# temporary files
+tmp.*
