@@ -64,9 +64,9 @@ void readAll(char *filename) {
         fread(edges + edgeBegin, sizeof(Edge), edgeEnd - edgeBegin, f);
     }
 
-#if defined(USE_REORDER_BFS)
     stickThisThreadToCore(0);
 
+#if defined(USE_REORDER_BFS)
     bool *visit = new bool[vertexCount];
     vid_t *que = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount));
     vid_t *rev = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount));
@@ -123,7 +123,62 @@ void readAll(char *filename) {
     free(edgesIds);
     edges = nextEdges;
     edgesIds = nextEdgesIds;
+
 #elif defined(USE_REORDER_COOLRENUM)
+
+    bool *visit = new bool[vertexCount];
+    vid_t *que = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount));
+    vid_t *rev = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount));
+    vid_t pos = 0;
+    for (vid_t v = 0; v < vertexCount; ++v) if (!visit[v]) {
+        visit[v] = true;
+        que[pos++] = v;
+        for (eid_t e = edgesIds[v]; e < edgesIds[v + 1]; ++e) {
+            const vid_t u = edges[e].dest;
+            if (visit[u]) continue;
+            visit[u] = true;
+            que[pos++] = u;
+        }
+    }
+    assert(pos == vertexCount);
+    delete[] visit;
+
+#pragma omp for
+    for (vid_t i = 0; i < vertexCount; ++i)
+        rev[que[i]] = i;
+
+    eid_t *nextEdgesIds = static_cast<eid_t*>(malloc(sizeof(eid_t) * (vertexCount + 1)));
+    Edge *nextEdges = static_cast<Edge*>(malloc(sizeof(Edge) * edgesCount));
+    nextEdgesIds[0] = 0;
+    for (int i = 0; i < curThreadsCount; ++i) {
+        stickThisThreadToCore(i);
+        const vid_t vertexBegin = int64_t(vertexCount) * (i + 0) / curThreadsCount;
+        const vid_t vertexEnd   = int64_t(vertexCount) * (i + 1) / curThreadsCount;
+        for (vid_t v = vertexBegin; v < vertexEnd; ++v) {
+            const vid_t nextv = que[v];
+            nextEdgesIds[v + 1] = nextEdgesIds[v] + edgesIds[nextv + 1] - edgesIds[nextv];
+        }
+    }
+#pragma omp parallel
+    {
+        const int i = omp_get_thread_num();
+        stickThisThreadToCore(i);
+        const vid_t vertexBegin = int64_t(vertexCount) * i / curThreadsCount;
+        const vid_t vertexEnd   = int64_t(vertexCount) * (i + 1) / curThreadsCount;
+        for (vid_t v = vertexBegin; v < vertexEnd; ++v) {
+            const vid_t nextv = que[v];
+            for (eid_t e = edgesIds[nextv]; e < edgesIds[nextv + 1]; ++e) {
+                nextEdges[nextEdgesIds[v] + e - edgesIds[nextv]] = edges[e];
+                nextEdges[nextEdgesIds[v] + e - edgesIds[nextv]].dest = rev[edges[e].dest];
+            }
+        }
+    }
+    free(que);
+    free(rev);
+    free(edges);
+    free(edgesIds);
+    edges = nextEdges;
+    edgesIds = nextEdgesIds;
 #endif /* USE_REORDER */
 
     fclose(f);

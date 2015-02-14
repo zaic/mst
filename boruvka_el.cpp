@@ -40,6 +40,7 @@ double times[kMaxThreads][kMaxIterations][40];
 
 bool haveOuterComps[kMaxThreads];
 //Stat<eid_t> skipEdges;
+//Stat<vid_t> activeComps;
 
 
 
@@ -83,7 +84,7 @@ bool doAll() {
 
         rdtsc.start(threadId);
         eid_t se = 0;
-        bool outerComps = 0;
+        bool outerComps = false;
         for (vid_t v = vertexIds[threadId]; v < vertexIds[threadId + 1]; ++v) {
             const eid_t edgesStart = startEdgesIds[v];
             const eid_t edgesEnd = edgesIds[v + 1];
@@ -92,7 +93,9 @@ bool doAll() {
             const vid_t cv = comp[v];
             weight_t startWeight = edges[edgesStart].weight;
             eid_t newEdgesStart = edgesStart;
+#ifdef USE_FAST_REDUCTION
             if (cv < vertexIds[threadId] || cv >= vertexIds[threadId + 1]) outerComps = true;
+#endif
 
             for (eid_t e = edgesStart; e < edgesEnd; ++e) {
                 weight_t weight = edges[e].weight;
@@ -131,11 +134,15 @@ bool doAll() {
         //
         rdtsc.start(threadId);
 
+#ifdef USE_FAST_REDUCTION
         bool doFastReduction = true;
         for (int i = 0; i < threadsCount; ++i) if (haveOuterComps[i]) {
             doFastReduction = false;
             break;
         }
+#else
+        bool doFastReduction = false;
+#endif
 
 #pragma omp single
         {
@@ -370,6 +377,7 @@ int main(int argc, char *argv[]) {
 #endif
 
     //skipEdges.print(iterationNumber, threadsCount, "skip edges", "%lld ");
+    //activeComps.print(iterationNumber, threadsCount, "active comps", "%d ");
 
     return 0;
 }
