@@ -64,7 +64,7 @@ void readAll(char *filename) {
         fread(edges + edgeBegin, sizeof(Edge), edgeEnd - edgeBegin, f);
     }
 
-#ifdef USE_REORDER
+#if defined(USE_REORDER_BFS)
     stickThisThreadToCore(0);
 
     bool *visit = new bool[vertexCount];
@@ -96,8 +96,8 @@ void readAll(char *filename) {
     nextEdgesIds[0] = 0;
     for (int i = 0; i < curThreadsCount; ++i) {
         stickThisThreadToCore(i);
-        const vid_t vertexBegin = int64_t(vertexCount + 1) * i / curThreadsCount;
-        const vid_t vertexEnd   = int64_t(vertexCount + 1) * (i + 1) / curThreadsCount;
+        const vid_t vertexBegin = int64_t(vertexCount) * (i + 0) / curThreadsCount;
+        const vid_t vertexEnd   = int64_t(vertexCount) * (i + 1) / curThreadsCount;
         for (vid_t v = vertexBegin; v < vertexEnd; ++v) {
             const vid_t nextv = que[v];
             nextEdgesIds[v + 1] = nextEdgesIds[v] + edgesIds[nextv + 1] - edgesIds[nextv];
@@ -107,8 +107,8 @@ void readAll(char *filename) {
     {
         const int i = omp_get_thread_num();
         stickThisThreadToCore(i);
-        const vid_t vertexBegin = int64_t(vertexCount + 1) * i / curThreadsCount;
-        const vid_t vertexEnd   = int64_t(vertexCount + 1) * (i + 1) / curThreadsCount;
+        const vid_t vertexBegin = int64_t(vertexCount) * i / curThreadsCount;
+        const vid_t vertexEnd   = int64_t(vertexCount) * (i + 1) / curThreadsCount;
         for (vid_t v = vertexBegin; v < vertexEnd; ++v) {
             const vid_t nextv = que[v];
             for (eid_t e = edgesIds[nextv]; e < edgesIds[nextv + 1]; ++e) {
@@ -118,10 +118,12 @@ void readAll(char *filename) {
         }
     }
     free(que);
+    free(rev);
     free(edges);
     free(edgesIds);
     edges = nextEdges;
     edgesIds = nextEdgesIds;
+#elif defined(USE_REORDER_COOLRENUM)
 #endif /* USE_REORDER */
 
     fclose(f);
