@@ -34,6 +34,10 @@ extern eid_t edgesCount;
 extern eid_t *edgesIds;
 extern Edge *edges;
 
+#ifdef USE_REORDER_BFS
+extern bool *componentEnd;
+#endif /* USE_REORDER_BFS */
+
 extern const weight_t MAX_WEIGHT;
 
 void readAll(char *filename);

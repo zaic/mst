@@ -1,6 +1,6 @@
 #if 0
 CXX=icpc
-CXXFLAGS=-O3 -g -lrt -lpthread -march=native -std=c++11 -Wall -Wextra -Wshadow -Wno-unused-result -fopenmp -DON_NUMA -pg -DUSE_EDGE_STRUCT -DUSE_SMALL_VECTOR -DON_HOME -DUSE_REORDER_BFSq -DUSE_SKIP_LOOPS=2
+CXXFLAGS=-O3 -g -lrt -lpthread -march=native -std=c++11 -Wall -Wextra -Wshadow -Wno-unused-result -fopenmp -DON_NUMA -pg -DUSE_EDGE_STRUCT -DUSE_SMALL_VECTOR -DON_HOME -DUSE_REORDER_BFS -DUSE_SKIP_LOOPS=2
 EXE=vector_test.out graphviz.out gen_simple.out gen_cube.out turboboost_stub.out reference.out boruvka_simple.out boruvka_el.out boruvka_el_uma.out boruvka_el_seq.out boruvka_al_merge.out boruvka_al_copy_dfs.out boruvka_al_copy_bfs.out boruvka_fl_bfs_list.out boruvka_fl_bfs_vector.out boruvka_fl_pj.out boruvka_el_offset.out
 
 all: ${EXE}
@@ -23,7 +23,7 @@ boruvka_simple.out: gen.o boruvka_simple.cpp makefile.h
 	${CXX} ${CXXFLAGS} $^ -o $@
 
 boruvka_el.out: gen.o boruvka_el.cpp makefile.h
-	${CXX} ${CXXFLAGS} -DUSE_SKIP_LOOPSq=2 $^ -o $@
+	${CXX} ${CXXFLAGS} -DUSE_FAST_REDUCTION $^ -o $@
 
 boruvka_el_offset.out: gen.o boruvka_el_offset.cpp makefile.h
 	${CXX} ${CXXFLAGS} $^ -o $@

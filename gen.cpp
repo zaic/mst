@@ -17,6 +17,10 @@ eid_t edgesCount;
 eid_t *edgesIds;
 Edge *edges;
 
+#ifdef USE_REORDER_BFS
+bool *componentEnd;
+#endif /* USE_REORDER_BFS */
+
 bool EdgeDestCmp::operator()(const Edge& a, const Edge& b) const {
     if (a.dest != b.dest) return a.dest < b.dest;
     return a.weight < b.weight;
@@ -67,6 +71,7 @@ void readAll(char *filename) {
     stickThisThreadToCore(0);
 
 #if defined(USE_REORDER_BFS)
+    componentEnd = new bool[vertexCount];
     bool *visit = new bool[vertexCount];
     vid_t *que = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount));
     vid_t *rev = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount));
@@ -83,6 +88,7 @@ void readAll(char *filename) {
                 que[bc++] = u;
             }
         }
+        componentEnd[bc - 1] = true;
     }
     assert(bc == vertexCount);
     delete[] visit;

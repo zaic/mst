@@ -312,7 +312,19 @@ void doPrepare() {
             }
         }
 #else
-        vertexIds[threadId + 1] = int64_t(vertexCount) * (threadId + 1) / threadsCount;
+        //vertexIds[threadId + 1] = int64_t(vertexCount) * (threadId + 1) / threadsCount;
+        const eid_t degreeEnd = int64_t(edgesCount) * (threadId + 1) / threadsCount;
+        eid_t degreeSum = 0;
+        vertexIds[threadId + 1] = -1;
+        for (vid_t i = 0; i < vertexCount; ++i) {
+            eid_t diff = edgesIds[i + 1] - edgesIds[i];
+            degreeSum += diff;
+            if (degreeSum >= degreeEnd && componentEnd[i]) {
+                vertexIds[threadId + 1] = i + 1;
+                break;
+            }
+        }
+        assert(vertexIds[threadId + 1] > 0);
 #endif
 
         localResult[threadId] = new Result[vertexCount];
