@@ -277,7 +277,9 @@ bool doAll() {
         }
     }
     
+    //
     // merge vertexes lists
+    //
 #pragma omp parallel
     {
         const int threadId = omp_get_thread_num();

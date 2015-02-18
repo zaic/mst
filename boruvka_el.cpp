@@ -249,7 +249,9 @@ bool doAll() {
         times[iterationNumber][threadId][2] = rdtsc.end(threadId);
     }
 
+    //
     // pointer jumping
+    //
     int changed = 100500;
     while (changed) {
         changed = 0;
@@ -262,6 +264,7 @@ bool doAll() {
                 vid_t myComp = comp[i];
                 if (myComp == i) continue;
                 vid_t parentComp = comp[myComp];
+#if 0
                 if (parentComp == i) {
                     comp[i] = min(i, myComp);
                     changed = 1;
@@ -269,6 +272,12 @@ bool doAll() {
                     comp[i] = parentComp;
                     changed = 1;
                 }
+#else
+                if (myComp != parentComp) {
+                    comp[i] = parentComp;
+                    changed = 1;
+                }
+#endif
             }
             times[iterationNumber][threadId][3] = rdtsc.end(threadId);
         }
@@ -300,7 +309,7 @@ void doPrepare() {
         }
 #pragma omp barrier
 
-#ifndef ON_NUMA
+#if 0
         eid_t degreeEnd = int64_t(edgesCount) * (threadId + 1) / threadsCount;
         eid_t degreeSum = 0;
         for (vid_t i = 0; i < vertexCount; ++i) {
@@ -325,7 +334,7 @@ void doPrepare() {
             }
         }
         assert(vertexIds[threadId + 1] > 0);
-#endif
+#endif /* vertexes distribution */
 
         localResult[threadId] = new Result[vertexCount];
         for (vid_t i = 0; i < vertexCount; ++i)
