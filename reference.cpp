@@ -43,6 +43,7 @@ int main(int argc, char *argv[]) {
 
     int64_t prepareTime = -currentNanoTime();
     vector<BiEdge> es;
+    es.reserve(edgesCount / 2);
     for (vid_t v = 0; v < vertexCount; ++v) {
         for (eid_t i = edgesIds[v]; i < edgesIds[v + 1]; ++i) {
             vid_t u = edges[i].dest;
