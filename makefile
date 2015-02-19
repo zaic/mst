@@ -1,6 +1,6 @@
 #if 0
 CXX=icpc
-CXXFLAGS=-O3 -g -lrt -lpthread -march=native -std=c++11 -Wall -Wextra -Wshadow -Wno-unused-result -fopenmp -DON_NUMA -pg -DUSE_EDGE_STRUCT -DUSE_SMALL_VECTOR -DON_HOME -DUSE_REORDER_BFS -DUSE_SKIP_LOOPSq=2
+CXXFLAGS=-O3 -g -lrt -lpthread -march=native -std=c++11 -Wall -Wextra -Wshadow -Wno-unused-result -fopenmp -DON_NUMA -pg -DUSE_EDGE_STRUCT -DON_HOME -DUSE_REORDER_BFS -DUSE_SKIP_LOOPSq=2
 EXE=vector_test.out graphviz.out gen_simple.out gen_cube.out turboboost_stub.out reference.out boruvka_simple.out boruvka_el.out boruvka_el_uma.out boruvka_el_seq.out boruvka_al_merge.out boruvka_al_copy_dfs.out boruvka_al_copy_bfs.out boruvka_fl_bfs_list.out boruvka_fl_bfs_vector.out boruvka_fl_pj.out
 
 all: ${EXE}
@@ -38,16 +38,16 @@ boruvka_al_merge.out: gen.o boruvka_al_merge.cpp makefile.h
 	${CXX} ${CXXFLAGS} $^ -o $@
 
 boruvka_al_copy_dfs.out: gen.o boruvka_al_copy_dfs.cpp makefile.h
-	${CXX} ${CXXFLAGS} $^ -o $@
+	${CXX} ${CXXFLAGS} -DUSE_SMALL_VECTOR $^ -o $@
 
 boruvka_al_copy_bfs.out: gen.o boruvka_al_copy_bfs.cpp vector.h makefile.h
-	${CXX} ${CXXFLAGS} -DAL_BFS__SMPCOPY -DUSE_BARANCING $^ -o $@
+	${CXX} ${CXXFLAGS} -DAL_BFS__SMPCOPY -DUSE_SMALL_VECTOR -DUSE_BARANCING $^ -o $@
 
 boruvka_fl_bfs_list.out: gen.o boruvka_fl_bfs_list.cpp vector.h makefile.h
-	${CXX} ${CXXFLAGS} $^ -DUSE_BARANCING -o $@
+	${CXX} ${CXXFLAGS} $^ -DUSE_BARANCING -DUSE_SMALL_VECTOR -o $@
 
 boruvka_fl_bfs_vector.out: gen.o boruvka_fl_bfs_vector.cpp vector.h makefile.h
-	${CXX} ${CXXFLAGS} -DUSE_BOUND $^ -o $@
+	${CXX} ${CXXFLAGS} -DUSE_BOUND -DUSE_SMALL_VECTOR $^ -o $@
 
 boruvka_fl_pj.out: gen.o boruvka_fl_pj.cpp vector.h makefile.h
 	${CXX} ${CXXFLAGS} -DUSE_BOUND $^ -o $@

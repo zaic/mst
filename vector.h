@@ -1,4 +1,5 @@
 #include <cinttypes>
+#include <cassert>
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
@@ -25,12 +26,14 @@ struct Vector {
             free(onHeap);
     }
 
+    /*
     void reserve(int64_t size) {
         size -= N;
         if (size <= 0) return ;
         onHeap = (T*)malloc(sizeof(T) * size);
         heapAllocated = size;
     }
+    */
 
     void clear() {
         if (onHeap) {
@@ -49,6 +52,23 @@ struct Vector {
         return !vectorSize;
     }
 
+    void reserve(int64_t newSize) {
+        if (!heapAllocated) {
+            heapAllocated = newSize;
+            onHeap = (T*)malloc(sizeof(T) * heapAllocated * InitAllocationFactor);
+        } else {
+            int64_t curSize = vectorSize - N;
+            assert(newSize > heapAllocated);
+            T *newHeap = (T*)malloc(sizeof(T) * newSize);
+            if (curSize > 0)
+                memcpy(newHeap, onHeap, sizeof(T) * curSize);
+            if (onHeap)
+                free(onHeap);
+            onHeap = newHeap;
+            heapAllocated = newSize;
+        }
+    }
+
     void pushBack(const T& value) {
         if (vectorSize < N) {
             onStack[vectorSize++] = value;
@@ -61,11 +81,7 @@ struct Vector {
                 onHeap = (T*)malloc(sizeof(T) * heapAllocated * InitAllocationFactor);
             } else {
                 int64_t newSize = heapAllocated * AllocationFactor;
-                T *newHeap = (T*)malloc(sizeof(T) * newSize);
-                memcpy(newHeap, onHeap, sizeof(T) * curSize);
-                free(onHeap);
-                onHeap = newHeap;
-                heapAllocated = newSize;
+                reserve(newSize);
             }
         }
         onHeap[curSize] = value;
@@ -88,12 +104,44 @@ struct Vector {
         }
     }
     
+    const T& at(int64_t index) const {
+        if (index < N) {
+            return onStack[index];
+        } else {
+            return onHeap[index - N];
+        }
+    }
+    
     T& operator[](int64_t index) {
         return at(index);
     }
 
+    const T& operator[](int64_t index) const {
+        return at(index);
+    }
+
     void append(const Vector& other) {
+#if 0
         int64_t appendedSize = other.size();
+        if (vectorSize + appendedSize > heapAllocated + N) {
+            reserve((vectorSize + appendedSize) + 10);
+        }
+
+        int64_t copied = 0;
+        while (vectorSize < N && copied < other.size())
+            onStack[vectorSize++] = other[copied++];
+        while (copied < other.size() && copied < N) {
+            onHeap[vectorSize - N] = other[copied++];
+            ++vectorSize;
+        }
+        if (copied < other.size()) {
+            memcpy(onHeap + vectorSize - N, other.onHeap + copied - N, sizeof(T) * (other.size() - copied));
+            vectorSize += other.size() - copied;
+        }
+#else
+        for (int64_t i = 0; i < other.size(); ++i)
+            push_back(other[i]);
+#endif
     }
 };
 

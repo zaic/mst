@@ -16,8 +16,6 @@
 #include "vector.h"
 using namespace std;
 
-typedef pair<weight_t, eid_t> pwe;
-
 vid_t *comp;
 weight_t taskResult;
 
@@ -44,7 +42,12 @@ namespace FlData {
         eid_t startEdgeId;  // 8 bytes   8...15
         eid_t endEdgeId;    // 8 bytes  16...23
     };
+    typedef Vector<ListElement, 10> SmallVector;
+#ifdef USE_SMALL_VECTOR
+    SmallVector *list;
+#else
     std::vector<ListElement> *list;
+#endif
 
 #ifdef USE_BOUND
     const int kVertexBound = 100000;
@@ -57,7 +60,11 @@ namespace FlData {
 
 
     void allocFalData() {
+#ifdef USE_SMALL_VECTOR
+        list = new SmallVector[vertexCount];
+#else
         list = new std::vector<ListElement>[vertexCount];
+#endif
     }
 }
 
@@ -78,6 +85,33 @@ bool doAll() {
         // find minimum edge
         //
         rdtsc.start(threadId);
+#ifdef USE_SKIP_LOOPS
+        if (iterationNumber > USE_SKIP_LOOPS) {
+            for (vid_t v = vertexIds[threadId]; v < vertexIds[threadId + 1]; ++v) {
+                const eid_t edgesStart = startEdgesIds[v];
+                const eid_t edgesEnd = edgesIds[v + 1];
+                if (edgesStart >= edgesEnd) continue;
+
+                const vid_t cv = comp[v];
+                eid_t newEdgesStart = edgesStart;
+
+                for (; newEdgesStart < edgesEnd; ++newEdgesStart) {
+                    const vid_t u = edges[newEdgesStart].dest;
+                    const vid_t cu = comp[u];
+                    if (cu == cv) continue;
+                    break;
+                }
+                if (newEdgesStart != edgesStart) startEdgesIds[v] = newEdgesStart;
+            }
+        }
+        times[iterationNumber][threadId][0] = rdtsc.end(threadId);
+#pragma omp barrier
+#endif
+
+        //
+        // find minimum edge
+        //
+        rdtsc.start(threadId);
 
 #ifdef USE_BOUND
         FlData::parallelProcess[threadId].clear();
@@ -91,7 +125,11 @@ bool doAll() {
             weight_t curBestWeight = MAX_WEIGHT + 1e-3;
             eid_t curBestEid = -1;
             
+#ifdef USE_SMALL_VECTOR
+            auto& data = FlData::list[v];
+#else
             vector<FlData::ListElement>& data = FlData::list[v];
+#endif /* USE_SMALL_VECTOR */
             for (size_t i = 0; i < data.size(); ) {
                 const vid_t curVertex = data[i].vertex;
                 eid_t curEdgeId = data[i].startEdgeId;
@@ -99,8 +137,12 @@ bool doAll() {
                 while (curEdgeId < endEdgeId && comp[edges[curEdgeId].dest] == v) ++curEdgeId;
                 if (curEdgeId == endEdgeId) {
                     // remove
+#ifdef USE_SMALL_VECTOR
+                    data.removeAt(i);
+#else
                     data[i] = data.back();
                     data.pop_back();
+#endif /* USE_SMALL_VECTOR */
                     continue;
                 } else {
                     data[i].startEdgeId = curEdgeId; // ToDo omptimize: write only when changed
@@ -118,7 +160,7 @@ bool doAll() {
         }
         assert(FlData::parallelProcess[threadId].size() < FlData::kBoundQueue);
 
-        times[iterationNumber][threadId][0] = rdtsc.end(threadId);
+        times[iterationNumber][threadId][1] = rdtsc.end(threadId);
 #pragma omp barrier
         rdtsc.start(threadId);
 
@@ -127,7 +169,11 @@ bool doAll() {
             const vid_t v = FlData::parallelProcess[t][vid];
             weight_t curBestWeight = MAX_WEIGHT + 1e-3;
             eid_t curBestEid = -1;
+#ifdef USE_SMALL_VECTOR
+            auto& data = FlData::list[v];
+#else
             vector<FlData::ListElement>& data = FlData::list[v];
+#endif /* USE_SMALL_VECTOR */
 
             size_t ifrom = data.size() * (threadId + 0) / threadsCount;
             size_t ito   = data.size() * (threadId + 1) / threadsCount;
@@ -151,7 +197,7 @@ bool doAll() {
             FlData::bestEidPerThread[t][threadId][vid] = curBestEid;
         }
 #endif /* USE_BOUND */
-        times[iterationNumber][threadId][1] = rdtsc.end(threadId);
+        times[iterationNumber][threadId][2] = rdtsc.end(threadId);
 #pragma omp barrier
         rdtsc.start(threadId);
 
@@ -170,7 +216,7 @@ bool doAll() {
             bestComp[v] = (curBestEid == -1 ? -1 : comp[edges[curBestEid].dest]);
         }
 
-        times[iterationNumber][threadId][1] += rdtsc.end(threadId);
+        times[iterationNumber][threadId][2] += rdtsc.end(threadId);
 
 #pragma omp barrier
 
@@ -184,7 +230,7 @@ bool doAll() {
             comp[v] = bestComp[v];
         }
 
-        times[iterationNumber][threadId][1] += rdtsc.end(threadId);
+        times[iterationNumber][threadId][3] += rdtsc.end(threadId);
 #pragma omp barrier
         rdtsc.start(threadId);
 
@@ -213,7 +259,7 @@ bool doAll() {
             bestEid[i] = -1; // TODO remove ?
         }
 
-        times[iterationNumber][threadId][1] += rdtsc.end(threadId);
+        times[iterationNumber][threadId][3] += rdtsc.end(threadId);
     }
 
     //
@@ -247,7 +293,7 @@ bool doAll() {
                     changed = 1;
                 }
             }
-            times[iterationNumber][threadId][3] += rdtsc.end(threadId);
+            times[iterationNumber][threadId][4] += rdtsc.end(threadId);
         }
     }
     
@@ -260,23 +306,46 @@ bool doAll() {
         stickThisThreadToCore(threadId);
         rdtsc.start(threadId);
 
+        const vid_t myIdsFrom = vertexIds[threadId];
+        const vid_t myIdsToto = vertexIds[threadId + 1];
         // TODO create bitvector readyForCopy ?
-        for (vid_t u = 0; u < vertexCount; ++u) if (comp[u] != u && !FlData::list[u].empty()) { // iterate over all vertexes
-            vid_t v = comp[u];
-            if (v / vertexesPerThread != threadId) continue; // check if this vertex points to our thread
-
-            // merge vectors
-            if (FlData::list[v].size() > FlData::list[u].size()) {
-                FlData::list[v].insert(FlData::list[v].end(), FlData::list[u].begin(), FlData::list[u].end());
-            } else {
-                FlData::list[u].insert(FlData::list[u].end(), FlData::list[v].begin(), FlData::list[v].end());
-                FlData::list[u].swap(FlData::list[v]);
+        if (iterationNumber == 0) {
+            for (vid_t u = 0; u < vertexCount; ++u) {
+                const vid_t v = comp[u];
+                if (v == u || v < myIdsFrom || v >= myIdsToto) continue;
+#ifdef USE_SMALL_VECTOR
+                FlData::list[v].push_back(FlData::list[u].onStack[0]);
+#else
+                FlData::list[v].push_back(FlData::list[u][0]);
+                FlData::list[u].clear();
+#endif /* USE_SMALL_VECTOR */
             }
+        } else {
+            for (vid_t u = 0; u < vertexCount; ++u) { // iterate over all vertexes
+                const vid_t v = comp[u];
+                if (v == u) continue;
+                //if (v / vertexesPerThread != threadId) continue; // check if this vertex points to our thread
+                if (v < myIdsFrom || v >= myIdsToto) continue;
+                if (FlData::list[u].empty()) continue;
 
-            FlData::list[u].clear();
+                // merge vectors
+#ifdef USE_SMALL_VECTOR
+                // TODO implement swap for vector
+                FlData::list[v].append(FlData::list[u]);
+#else
+                if (FlData::list[v].size() > FlData::list[u].size()) {
+                    FlData::list[v].insert(FlData::list[v].end(), FlData::list[u].begin(), FlData::list[u].end());
+                } else {
+                    FlData::list[u].insert(FlData::list[u].end(), FlData::list[v].begin(), FlData::list[v].end());
+                    FlData::list[u].swap(FlData::list[v]);
+                }
+
+                FlData::list[u].clear();
+#endif /* USE_SMALL_VECTOR */
+            }
         }
 
-        times[iterationNumber][threadId][4] = rdtsc.end(threadId);
+        times[iterationNumber][threadId][5] = rdtsc.end(threadId);
     }
 
     taskResult += tmpTaskResult;
@@ -331,6 +400,9 @@ void doPrepare() {
 #pragma omp barrier
 
         for (vid_t i = vertexIds[threadId]; i < vertexIds[threadId + 1]; ++i) {
+#if 1
+            FlData::list[i].reserve(10);
+#endif
             FlData::list[i].push_back(FlData::ListElement{i, edgesIds[i], edgesIds[i + 1]});
 
             std::sort(edges + edgesIds[i], edges + edgesIds[i + 1], EdgeWeightCmp());
@@ -379,7 +451,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "iteration %2d\n", i);
         for (int j = 0; j < threadsCount; ++j) {
             fprintf(stderr, "%02d:   ", j);
-            for (int k = 0; k < 5; ++k) // find-min-local, find-min-large-parallel, add edges to mst, pj, merge
+            for (int k = 0; k < 6; ++k) // skip-loops, find-min-local, find-min-large-parallel, add edges to mst, pj, merge
                 fprintf(stderr, "%.6lf ", times[i][j][k]);
             fputs("\n", stderr);
         }
