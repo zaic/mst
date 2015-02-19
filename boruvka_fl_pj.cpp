@@ -44,12 +44,7 @@ namespace FlData {
         eid_t startEdgeId;  // 8 bytes   8...15
         eid_t endEdgeId;    // 8 bytes  16...23
     };
-#ifdef USE_LARGE
-    ListElement *listData;
-    LargeVector<ListElement> *list;
-#else
     std::vector<ListElement> *list;
-#endif /* USE_LARGE */
 
 #ifdef USE_BOUND
     const int kVertexBound = 100000;
@@ -62,12 +57,7 @@ namespace FlData {
 
 
     void allocFalData() {
-#ifdef USE_LARGE
-        listData = (ListElement*)malloc(sizeof(ListElement) * size_t(vertexCount) * vertexCount);
-        list = (LargeVector<ListElement>*)malloc(sizeof(LargeVector<ListElement>) * vertexCount);
-#else
         list = new std::vector<ListElement>[vertexCount];
-#endif /* USE_LARGE */
     }
 }
 
@@ -101,26 +91,16 @@ bool doAll() {
             weight_t curBestWeight = MAX_WEIGHT + 1e-3;
             eid_t curBestEid = -1;
             
-#ifdef USE_LARGE
-            FlData::ListElement *data = FlData::list[v].data;
-            const size_t ito = FlData::list[v].size;
-            for (size_t i = 0; i < FlData::list[v].size; ) {
-#else
             vector<FlData::ListElement>& data = FlData::list[v];
             for (size_t i = 0; i < data.size(); ) {
-#endif /* USE_LARGE */
                 const vid_t curVertex = data[i].vertex;
                 eid_t curEdgeId = data[i].startEdgeId;
                 const eid_t endEdgeId = data[i].endEdgeId;
                 while (curEdgeId < endEdgeId && comp[edges[curEdgeId].dest] == v) ++curEdgeId;
                 if (curEdgeId == endEdgeId) {
                     // remove
-#ifdef USE_LARGE
-                    FlData::list[v].removeAt(i);
-#else
                     data[i] = data.back();
                     data.pop_back();
-#endif /* USE_LARGE */
                     continue;
                 } else {
                     data[i].startEdgeId = curEdgeId; // ToDo omptimize: write only when changed
@@ -141,10 +121,6 @@ bool doAll() {
         times[iterationNumber][threadId][0] = rdtsc.end(threadId);
 #pragma omp barrier
         rdtsc.start(threadId);
-
-#ifdef USE_LARGE
-#error Ehhh...
-#endif /* USE_LARGE */
 
 #ifdef USE_BOUND
         for (int t = 0; t < threadsCount; ++t) for (size_t vid = 0; vid < FlData::parallelProcess[t].size(); ++vid) {
@@ -289,9 +265,6 @@ bool doAll() {
             vid_t v = comp[u];
             if (v / vertexesPerThread != threadId) continue; // check if this vertex points to our thread
 
-#ifdef USE_LARGE
-#error Not implemented
-#endif
             // merge vectors
             if (FlData::list[v].size() > FlData::list[u].size()) {
                 FlData::list[v].insert(FlData::list[v].end(), FlData::list[u].begin(), FlData::list[u].end());
@@ -358,13 +331,7 @@ void doPrepare() {
 #pragma omp barrier
 
         for (vid_t i = vertexIds[threadId]; i < vertexIds[threadId + 1]; ++i) {
-#ifdef USE_LARGE
-            //FlData::list[i].init(vertexCount);
-            FlData::list[i].init(FlData::listData + size_t(vertexCount) * i);
             FlData::list[i].push_back(FlData::ListElement{i, edgesIds[i], edgesIds[i + 1]});
-#else
-            FlData::list[i].push_back(FlData::ListElement{i, edgesIds[i], edgesIds[i + 1]});
-#endif /* USE_LARGE */
 
             std::sort(edges + edgesIds[i], edges + edgesIds[i + 1], EdgeWeightCmp());
         }
