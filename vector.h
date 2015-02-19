@@ -41,11 +41,11 @@ struct Vector {
         vectorSize = 0;
     }
 
-    int64_t size() {
+    int64_t size() const {
         return vectorSize;
     }
 
-    bool empty() {
+    bool empty() const {
         return !vectorSize;
     }
 
@@ -72,6 +72,10 @@ struct Vector {
         vectorSize++;
     }
 
+    void push_back(const T& value) {
+        pushBack(value);
+    }
+
     void removeAt(int64_t index) {
         at(index) = at(--vectorSize);
     }
@@ -82,6 +86,14 @@ struct Vector {
         } else {
             return onHeap[index - N];
         }
+    }
+    
+    T& operator[](int64_t index) {
+        return at(index);
+    }
+
+    void append(const Vector& other) {
+        int64_t appendedSize = other.size();
     }
 };
 

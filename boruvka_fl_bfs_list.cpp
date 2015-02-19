@@ -181,12 +181,12 @@ bool doAll() {
             const vid_t toi = (iterationNumber == 0 ? edges[curBestEid].dest : comp[edges[curBestEid].dest]); // TODO improve pref using destComp from ExtEdge
             const vid_t toi_thread = toi / vertexesPerThread;
             graph_messages[threadId][toi_thread].push_back(pvv(toi, i));
-            gComp[i].pushBack(toi);
+            gComp[i].push_back(toi);
         }
 #pragma omp barrier
         for (int i = 0; i < threadsCount; ++i)
             for (const pvv e : graph_messages[i][threadId])
-                gComp[e.first].pushBack(e.second);
+                gComp[e.first].push_back(e.second);
         times[iterationNumber][threadId][1] = rdtsc.end(threadId);
 #pragma omp barrier
 
