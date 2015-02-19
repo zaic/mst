@@ -33,14 +33,26 @@ extern vid_t vertexCount;
 extern eid_t edgesCount;
 extern eid_t *edgesIds;
 extern Edge *edges;
+extern int threadsCount;
+extern int iterationNumber;
 
-#ifdef USE_REORDER_BFS
 extern bool *componentEnd;
-#endif /* USE_REORDER_BFS */
 
 extern const weight_t MAX_WEIGHT;
 
 void readAll(char *filename);
+
+void doReorderBfs();
+void doReorderSimple();
+static void doReorder() {
+#if defined(USE_REORDER_BFS)
+    doReorderBfs();
+#elif defined(USE_REDUCTION_SIMPLE)
+    doReorderSimple();
+#else
+    // do nothing
+#endif
+}
 
 int64_t currentNanoTime();
 int stickThisThreadToCore(int coreId);

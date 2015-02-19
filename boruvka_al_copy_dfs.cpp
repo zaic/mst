@@ -20,9 +20,7 @@ typedef pair<weight_t, eid_t> pwe;
 vid_t *comp;
 weight_t taskResult;
 
-int threadsCount;
 vid_t *vertexIds;
-int iterationNumber;
 
 struct ExtEdge {
     weight_t weight;

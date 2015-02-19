@@ -19,10 +19,8 @@ typedef pair<weight_t, eid_t> pwe;
 vid_t *comp;
 weight_t taskResult;
 
-int threadsCount;
 vid_t *vertexIds;
 eid_t *startEdgesIds;
-int iterationNumber;
 
 struct Result {
     weight_t weight;
@@ -45,6 +43,7 @@ bool haveOuterComps[kMaxThreads];
 
 
 bool doAll() {
+    Eo("!");
     Eo(iterationNumber);
     int updated = 0; // reduce stage 
     weight_t tmpTaskResult = 0.0; // merge stage
@@ -141,7 +140,7 @@ bool doAll() {
             break;
         }
 #else
-        bool doFastReduction = false;
+        const bool doFastReduction = false;
 #endif
 
 #pragma omp single
@@ -167,7 +166,7 @@ bool doAll() {
 
         } else {
 
-#if 0 /* REDUCTION_TYPE */
+#if defined(USE_REDUCTION_SIMPLE)
 #pragma omp for reduction(+:updated) nowait
         for (vid_t i = 0; i < vertexCount; ++i) {
             if (comp[i] == i) {
@@ -185,7 +184,7 @@ bool doAll() {
                 //bestResult[i].weight = MAX_WEIGHT + 0.1;
             }
         }
-#else
+#elif defined(USE_REDUCTION_TREE)
             for (int treeIteration = 0; (1 << treeIteration) < threadsCount; treeIteration++) {
                 const int reduceTo = ((threadId >> (treeIteration + 1)) << (treeIteration + 1));
                 const int reduceFrom = reduceTo + (1 << treeIteration);
@@ -216,6 +215,8 @@ bool doAll() {
                 }
             }
         }
+#else /* REDUCTION_TYPE */
+#error reduction type should be set
 #endif /* REDUCTION_TYPE */
         times[iterationNumber][threadId][1] = rdtsc.end(threadId);
         // if (!updated) return false; TODO
@@ -289,6 +290,8 @@ bool doAll() {
 }
 
 void doPrepare() {
+    doReorder();
+
     vertexIds = new vid_t[vertexCount + 1];
     vertexIds[0] = 0;
 

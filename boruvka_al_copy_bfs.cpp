@@ -21,14 +21,12 @@ typedef pair<weight_t, eid_t> pwe;
 vid_t *comp;
 weight_t taskResult;
 
-int threadsCount;
 #ifdef ON_NUMA
 vid_t vertexesPerThread;
 #else
 #define vertexesPerThread #error numa_only
 #endif
 vid_t *vertexIds;
-int iterationNumber;
 
 #ifdef USE_EDGE_STRUCT
 struct ExtEdge {

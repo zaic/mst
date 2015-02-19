@@ -12,15 +12,24 @@
 
 const weight_t MAX_WEIGHT = 1.0;
 
+//
+// Global data
+//
 vid_t vertexCount;
 eid_t edgesCount;
 eid_t *edgesIds;
 Edge *edges;
+int threadsCount;
+int iterationNumber;
 
-#ifdef USE_REORDER_BFS
+//
+// BFS-reorder specific variable
+//
 bool *componentEnd;
-#endif /* USE_REORDER_BFS */
 
+//
+// Edge comparators
+//
 bool EdgeDestCmp::operator()(const Edge& a, const Edge& b) const {
     if (a.dest != b.dest) return a.dest < b.dest;
     return a.weight < b.weight;
@@ -30,47 +39,12 @@ bool EdgeWeightCmp::operator()(const Edge& a, const Edge& b) const {
     return a.weight < b.weight;
 }
 
-void readAll(char *filename) {
-    FILE *f = fopen(filename, "rb");
-    assert(f);
-
-    fread(&vertexCount, sizeof(vid_t), 1, f);
-    fread(&edgesCount, sizeof(eid_t), 1, f);
-
-    // NUMA-specific part
-    // Each core allocate memory and read data, which will processed on this core
-    int curThreadsCount;
-#pragma omp parallel
-    {
-#pragma omp master
-        {
-            curThreadsCount = omp_get_num_threads();
-        }
-    }
-    Eo(curThreadsCount);
-
-    edgesIds = (eid_t*)malloc(sizeof(eid_t) * (vertexCount + 1));
-    edges = (Edge*)malloc(sizeof(Edge) * (edgesCount));
-
-    for (int i = 0; i < curThreadsCount; ++i) {
-        stickThisThreadToCore(i);
-        const int vertexBegin = int64_t(vertexCount + 1) * i / curThreadsCount;
-        const int vertexEnd   = int64_t(vertexCount + 1) * (i + 1) / curThreadsCount;
-        fread(edgesIds + vertexBegin, sizeof(eid_t), vertexEnd - vertexBegin, f);
-    }
-
-    for (int i = 0; i < curThreadsCount; ++i) {
-        stickThisThreadToCore(i);
-        const int vertexBegin = int64_t(vertexCount) * i / curThreadsCount;
-        const int vertexEnd   = int64_t(vertexCount) * (i + 1) / curThreadsCount;
-        const int edgeBegin   = edgesIds[vertexBegin];
-        const int edgeEnd     = edgesIds[vertexEnd];
-        fread(edges + edgeBegin, sizeof(Edge), edgeEnd - edgeBegin, f);
-    }
-
+//
+// Reorder functions
+//
+void doReorderBfs() {
     stickThisThreadToCore(0);
 
-#if defined(USE_REORDER_BFS)
     componentEnd = new bool[vertexCount];
     bool *visit = new bool[vertexCount];
     vid_t *que = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount));
@@ -93,17 +67,17 @@ void readAll(char *filename) {
     assert(bc == vertexCount);
     delete[] visit;
 
-#pragma omp for
+#pragma omp parallel for
     for (vid_t i = 0; i < vertexCount; ++i)
         rev[que[i]] = i;
 
     eid_t *nextEdgesIds = static_cast<eid_t*>(malloc(sizeof(eid_t) * (vertexCount + 1)));
     Edge *nextEdges = static_cast<Edge*>(malloc(sizeof(Edge) * edgesCount));
     nextEdgesIds[0] = 0;
-    for (int i = 0; i < curThreadsCount; ++i) {
+    for (int i = 0; i < threadsCount; ++i) {
         stickThisThreadToCore(i);
-        const vid_t vertexBegin = int64_t(vertexCount) * (i + 0) / curThreadsCount;
-        const vid_t vertexEnd   = int64_t(vertexCount) * (i + 1) / curThreadsCount;
+        const vid_t vertexBegin = int64_t(vertexCount) * (i + 0) / threadsCount;
+        const vid_t vertexEnd   = int64_t(vertexCount) * (i + 1) / threadsCount;
         for (vid_t v = vertexBegin; v < vertexEnd; ++v) {
             const vid_t nextv = que[v];
             nextEdgesIds[v + 1] = nextEdgesIds[v] + edgesIds[nextv + 1] - edgesIds[nextv];
@@ -113,8 +87,8 @@ void readAll(char *filename) {
     {
         const int i = omp_get_thread_num();
         stickThisThreadToCore(i);
-        const vid_t vertexBegin = int64_t(vertexCount) * i / curThreadsCount;
-        const vid_t vertexEnd   = int64_t(vertexCount) * (i + 1) / curThreadsCount;
+        const vid_t vertexBegin = int64_t(vertexCount) * i / threadsCount;
+        const vid_t vertexEnd   = int64_t(vertexCount) * (i + 1) / threadsCount;
         for (vid_t v = vertexBegin; v < vertexEnd; ++v) {
             const vid_t nextv = que[v];
             for (eid_t e = edgesIds[nextv]; e < edgesIds[nextv + 1]; ++e) {
@@ -123,14 +97,17 @@ void readAll(char *filename) {
             }
         }
     }
+
     free(que);
     free(rev);
     free(edges);
     free(edgesIds);
     edges = nextEdges;
     edgesIds = nextEdgesIds;
+}
 
-#elif defined(USE_REORDER_COOLRENUM)
+void doReorderSimple() {
+    stickThisThreadToCore(0);
 
     bool *visit = new bool[vertexCount];
     vid_t *que = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount));
@@ -149,17 +126,17 @@ void readAll(char *filename) {
     assert(pos == vertexCount);
     delete[] visit;
 
-#pragma omp for
+#pragma omp parallel for
     for (vid_t i = 0; i < vertexCount; ++i)
         rev[que[i]] = i;
 
     eid_t *nextEdgesIds = static_cast<eid_t*>(malloc(sizeof(eid_t) * (vertexCount + 1)));
     Edge *nextEdges = static_cast<Edge*>(malloc(sizeof(Edge) * edgesCount));
     nextEdgesIds[0] = 0;
-    for (int i = 0; i < curThreadsCount; ++i) {
+    for (int i = 0; i < threadsCount; ++i) {
         stickThisThreadToCore(i);
-        const vid_t vertexBegin = int64_t(vertexCount) * (i + 0) / curThreadsCount;
-        const vid_t vertexEnd   = int64_t(vertexCount) * (i + 1) / curThreadsCount;
+        const vid_t vertexBegin = int64_t(vertexCount) * (i + 0) / threadsCount;
+        const vid_t vertexEnd   = int64_t(vertexCount) * (i + 1) / threadsCount;
         for (vid_t v = vertexBegin; v < vertexEnd; ++v) {
             const vid_t nextv = que[v];
             nextEdgesIds[v + 1] = nextEdgesIds[v] + edgesIds[nextv + 1] - edgesIds[nextv];
@@ -169,8 +146,8 @@ void readAll(char *filename) {
     {
         const int i = omp_get_thread_num();
         stickThisThreadToCore(i);
-        const vid_t vertexBegin = int64_t(vertexCount) * i / curThreadsCount;
-        const vid_t vertexEnd   = int64_t(vertexCount) * (i + 1) / curThreadsCount;
+        const vid_t vertexBegin = int64_t(vertexCount) * i / threadsCount;
+        const vid_t vertexEnd   = int64_t(vertexCount) * (i + 1) / threadsCount;
         for (vid_t v = vertexBegin; v < vertexEnd; ++v) {
             const vid_t nextv = que[v];
             for (eid_t e = edgesIds[nextv]; e < edgesIds[nextv + 1]; ++e) {
@@ -185,11 +162,54 @@ void readAll(char *filename) {
     free(edgesIds);
     edges = nextEdges;
     edgesIds = nextEdgesIds;
-#endif /* USE_REORDER */
-
-    fclose(f);
 }
 
+//
+// Read input data
+//
+void readAll(char *filename) {
+    iterationNumber = 0;
+#pragma omp parallel
+    {
+#pragma omp master
+        {
+            threadsCount = omp_get_num_threads();
+        }
+    }
+
+    FILE *f = fopen(filename, "rb");
+    assert(f);
+
+    fread(&vertexCount, sizeof(vid_t), 1, f);
+    fread(&edgesCount, sizeof(eid_t), 1, f);
+
+    // NUMA-specific part
+    // Each core allocate memory and read data, which will processed on this core
+    edgesIds = (eid_t*)malloc(sizeof(eid_t) * (vertexCount + 1));
+    edges = (Edge*)malloc(sizeof(Edge) * (edgesCount));
+
+    for (int i = 0; i < threadsCount; ++i) {
+        stickThisThreadToCore(i);
+        const int vertexBegin = int64_t(vertexCount + 1) * i / threadsCount;
+        const int vertexEnd   = int64_t(vertexCount + 1) * (i + 1) / threadsCount;
+        fread(edgesIds + vertexBegin, sizeof(eid_t), vertexEnd - vertexBegin, f);
+    }
+
+    for (int i = 0; i < threadsCount; ++i) {
+        stickThisThreadToCore(i);
+        const int vertexBegin = int64_t(vertexCount) * i / threadsCount;
+        const int vertexEnd   = int64_t(vertexCount) * (i + 1) / threadsCount;
+        const int edgeBegin   = edgesIds[vertexBegin];
+        const int edgeEnd     = edgesIds[vertexEnd];
+        fread(edges + edgeBegin, sizeof(Edge), edgeEnd - edgeBegin, f);
+    }
+    fclose(f);
+
+}
+
+//
+// Timer functions
+//
 int64_t currentNanoTime() {
     timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
