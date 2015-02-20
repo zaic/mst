@@ -85,33 +85,6 @@ bool doAll() {
         // find minimum edge
         //
         rdtsc.start(threadId);
-#ifdef USE_SKIP_LOOPS
-        if (iterationNumber > USE_SKIP_LOOPS) {
-            for (vid_t v = vertexIds[threadId]; v < vertexIds[threadId + 1]; ++v) {
-                const eid_t edgesStart = startEdgesIds[v];
-                const eid_t edgesEnd = edgesIds[v + 1];
-                if (edgesStart >= edgesEnd) continue;
-
-                const vid_t cv = comp[v];
-                eid_t newEdgesStart = edgesStart;
-
-                for (; newEdgesStart < edgesEnd; ++newEdgesStart) {
-                    const vid_t u = edges[newEdgesStart].dest;
-                    const vid_t cu = comp[u];
-                    if (cu == cv) continue;
-                    break;
-                }
-                if (newEdgesStart != edgesStart) startEdgesIds[v] = newEdgesStart;
-            }
-        }
-        times[iterationNumber][threadId][0] = rdtsc.end(threadId);
-#pragma omp barrier
-#endif
-
-        //
-        // find minimum edge
-        //
-        rdtsc.start(threadId);
 
 #ifdef USE_BOUND
         FlData::parallelProcess[threadId].clear();
@@ -160,7 +133,7 @@ bool doAll() {
         }
         assert(FlData::parallelProcess[threadId].size() < FlData::kBoundQueue);
 
-        times[iterationNumber][threadId][1] = rdtsc.end(threadId);
+        times[iterationNumber][threadId][0] = rdtsc.end(threadId);
 #pragma omp barrier
         rdtsc.start(threadId);
 
@@ -197,7 +170,7 @@ bool doAll() {
             FlData::bestEidPerThread[t][threadId][vid] = curBestEid;
         }
 #endif /* USE_BOUND */
-        times[iterationNumber][threadId][2] = rdtsc.end(threadId);
+        times[iterationNumber][threadId][1] = rdtsc.end(threadId);
 #pragma omp barrier
         rdtsc.start(threadId);
 
@@ -216,7 +189,7 @@ bool doAll() {
             bestComp[v] = (curBestEid == -1 ? -1 : comp[edges[curBestEid].dest]);
         }
 
-        times[iterationNumber][threadId][2] += rdtsc.end(threadId);
+        times[iterationNumber][threadId][1] += rdtsc.end(threadId);
 
 #pragma omp barrier
 
@@ -230,7 +203,7 @@ bool doAll() {
             comp[v] = bestComp[v];
         }
 
-        times[iterationNumber][threadId][3] += rdtsc.end(threadId);
+        times[iterationNumber][threadId][2] += rdtsc.end(threadId);
 #pragma omp barrier
         rdtsc.start(threadId);
 
@@ -259,7 +232,7 @@ bool doAll() {
             bestEid[i] = -1; // TODO remove ?
         }
 
-        times[iterationNumber][threadId][3] += rdtsc.end(threadId);
+        times[iterationNumber][threadId][2] += rdtsc.end(threadId);
     }
 
     //
@@ -293,7 +266,7 @@ bool doAll() {
                     changed = 1;
                 }
             }
-            times[iterationNumber][threadId][4] += rdtsc.end(threadId);
+            times[iterationNumber][threadId][3] += rdtsc.end(threadId);
         }
     }
     
@@ -345,7 +318,7 @@ bool doAll() {
             }
         }
 
-        times[iterationNumber][threadId][5] = rdtsc.end(threadId);
+        times[iterationNumber][threadId][4] = rdtsc.end(threadId);
     }
 
     taskResult += tmpTaskResult;
@@ -451,7 +424,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "iteration %2d\n", i);
         for (int j = 0; j < threadsCount; ++j) {
             fprintf(stderr, "%02d:   ", j);
-            for (int k = 0; k < 6; ++k) // skip-loops, find-min-local, find-min-large-parallel, add edges to mst, pj, merge
+            for (int k = 0; k < 5; ++k) // skip-loops, find-min-local, find-min-large-parallel, add edges to mst, pj, merge
                 fprintf(stderr, "%.6lf ", times[i][j][k]);
             fputs("\n", stderr);
         }
