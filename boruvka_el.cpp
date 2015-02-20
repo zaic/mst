@@ -39,7 +39,7 @@ double times[kMaxThreads][kMaxIterations][40];
 bool haveOuterComps[kMaxThreads];
 #ifdef USE_SKIP_LAST_ITER
 vid_t aliveComponents;
-#endif
+#endif /* USE_SKIP_LAST_ITER */
 
 
 
@@ -103,10 +103,7 @@ bool doAll() {
 
                 const vid_t u = edges[e].dest;
                 const vid_t cu = comp[u];
-                if (cu == cv) {
-                    //++se;
-                    continue;
-                }
+                if (cu == cv) continue;
 
                 if (weight < result[cv].weight || (weight == result[cv].weight && cu < result[cv].destComp)) {
                     result[cv] = Result{edges[e].weight, cu, v, u};
@@ -119,14 +116,8 @@ bool doAll() {
 
             if (newEdgesStart != edgesStart) startEdgesIds[v] = newEdgesStart;
         }
-        //skipEdges.set(threadId, iterationNumber, se);
         haveOuterComps[threadId] = outerComps;
         times[iterationNumber][threadId][0] = rdtsc.end(threadId);
-#pragma omp critical
-        {
-            E(threadId); Eo(haveOuterComps[threadId]);
-        }
-
 #pragma omp barrier
 
         //
@@ -144,11 +135,6 @@ bool doAll() {
         const bool doFastReduction = false;
 #endif
 
-#pragma omp single
-        {
-            Eo(doFastReduction);
-        }
-
         if (doFastReduction) {
             int localUpdated = 0;
             for (vid_t v = vertexIds[threadId]; v < vertexIds[threadId + 1]; ++v) {
@@ -163,7 +149,7 @@ bool doAll() {
             }
 
             if (localUpdated)
-                updated = localUpdated; // TODO correct?
+                updated = localUpdated;
 
         } else {
 
@@ -181,18 +167,6 @@ bool doAll() {
                         if (bestThread == -1 || localResult[j][i].weight < localResult[bestThread][i].weight)
                             bestThread = j;
                     }
-
-#if 0
-                    Result best{MAX_WEIGHT + 0.1, 0, 0, 0};
-                    for (int j = 0; j < threadsCount; ++j) {
-                        const weight_t curWeight = localResult[j][i].weight;
-                        if (curWeight > MAX_WEIGHT) continue;
-                        if (bestThread == -1 || curWeight < localResult[bestThread][i].weight)
-                            bestThread = j;
-                        best = min(best, localResult[j][i]); // !
-                        localResult[j][i].weight = MAX_WEIGHT + 0.1;
-                    }
-#endif
 
                     if (bestThread == -1) {
                         bestResult[i].weight = MAX_WEIGHT + 0.1;
@@ -244,7 +218,6 @@ bool doAll() {
 #endif /* REDUCTION_TYPE */
         }
         times[iterationNumber][threadId][1] = rdtsc.end(threadId);
-        // if (!updated) return false; TODO
 
 #pragma omp barrier
 
@@ -279,9 +252,7 @@ bool doAll() {
     }
 
 #ifdef USE_SKIP_LAST_ITER
-    //aliveComponents -= diedComponents;
     aliveComponents = diedComponents;
-    E(diedComponents); Eo(aliveComponents);
     if (aliveComponents == 1) {
         updated = 0;
         goto force_exit;
@@ -303,20 +274,10 @@ bool doAll() {
                 vid_t myComp = comp[i];
                 if (myComp == i) continue;
                 vid_t parentComp = comp[myComp];
-#if 0
-                if (parentComp == i) {
-                    comp[i] = min(i, myComp);
-                    changed = 1;
-                } else if (myComp != parentComp) {
-                    comp[i] = parentComp;
-                    changed = 1;
-                }
-#else
                 if (myComp != parentComp) {
                     comp[i] = parentComp;
                     changed = 1;
                 }
-#endif
             }
             times[iterationNumber][threadId][3] = rdtsc.end(threadId);
         }
@@ -324,7 +285,7 @@ bool doAll() {
 
 #ifdef USE_SKIP_LAST_ITER
 force_exit:
-#endif
+#endif /* USE_SKIP_LAST_ITER */
     taskResult += tmpTaskResult;
     ++iterationNumber;
     return updated;
@@ -391,8 +352,6 @@ void doPrepare() {
             sort(edges + edgesIds[i], edges + edgesIds[i + 1], EdgeWeightCmp());
             startEdgesIds[i] = edgesIds[i];
         }
-
-        //E(threadId); Eo(vertexIds[threadId + 1]);
     }
 }
 
@@ -443,9 +402,6 @@ int main(int argc, char *argv[]) {
         }
     }
 #endif
-
-    //skipEdges.print(iterationNumber, threadsCount, "skip edges", "%lld ");
-    //activeComps.print(iterationNumber, threadsCount, "active comps", "%d ");
 
     return 0;
 }
