@@ -43,7 +43,6 @@ bool haveOuterComps[kMaxThreads];
 
 
 bool doAll() {
-    Eo("!");
     Eo(iterationNumber);
     int updated = 0; // reduce stage 
     weight_t tmpTaskResult = 0.0; // merge stage
@@ -168,22 +167,46 @@ bool doAll() {
 
 #if defined(USE_REDUCTION_SIMPLE)
 #pragma omp for reduction(+:updated) nowait
-        for (vid_t i = 0; i < vertexCount; ++i) {
-            if (comp[i] == i) {
-                Result best{MAX_WEIGHT + 0.1, 0, 0, 0};
-                for (int j = 0; j < threadsCount; ++j) {
-                    best = min(best, localResult[j][i]); // !
-                    localResult[j][i].weight = MAX_WEIGHT + 0.1;
+            for (vid_t i = 0; i < vertexCount; ++i) {
+                if (comp[i] == i) {
+                    thread_vector_t haveResult = 0;
+                    for (int j = 0; j < threadsCount; ++j)
+                        if (localResult[j][i].weight <= MAX_WEIGHT)
+                            haveResult |= bit<thread_vector_t>(j);
+
+                    int bestThread = -1;
+                    for (int j = 0; j < threadsCount; ++j) if (haveResult & bit<thread_vector_t>(j)) {
+                        if (bestThread == -1 || localResult[j][i].weight < localResult[bestThread][i].weight)
+                            bestThread = j;
+                    }
+
+#if 0
+                    Result best{MAX_WEIGHT + 0.1, 0, 0, 0};
+                    for (int j = 0; j < threadsCount; ++j) {
+                        const weight_t curWeight = localResult[j][i].weight;
+                        if (curWeight > MAX_WEIGHT) continue;
+                        if (bestThread == -1 || curWeight < localResult[bestThread][i].weight)
+                            bestThread = j;
+                        best = min(best, localResult[j][i]); // !
+                        localResult[j][i].weight = MAX_WEIGHT + 0.1;
+                    }
+#endif
+
+                    if (bestThread == -1) {
+                        bestResult[i].weight = MAX_WEIGHT + 0.1;
+                    } else {
+                        bestResult[i] = localResult[bestThread][i];
+                        comp[i] = localResult[bestThread][i].destComp;
+                        updated = 1;
+                    }
+
+                    for (int j = 0; j < threadsCount; ++j) if (haveResult & bit<thread_vector_t>(j)) {
+                        localResult[j][i].weight = MAX_WEIGHT + 0.1;
+                    }
+                } else {
+                    //bestResult[i].weight = MAX_WEIGHT + 0.1;
                 }
-                bestResult[i] = best;
-                if (best.weight <= MAX_WEIGHT) {
-                    comp[i] = best.destComp;
-                    updated = 1;
-                }
-            } else {
-                //bestResult[i].weight = MAX_WEIGHT + 0.1;
             }
-        }
 #elif defined(USE_REDUCTION_TREE)
             for (int treeIteration = 0; (1 << treeIteration) < threadsCount; treeIteration++) {
                 const int reduceTo = ((threadId >> (treeIteration + 1)) << (treeIteration + 1));
@@ -214,10 +237,10 @@ bool doAll() {
                     localResult[0][i].weight = MAX_WEIGHT + 0.1;
                 }
             }
-        }
 #else /* REDUCTION_TYPE */
 #error reduction type should be set
 #endif /* REDUCTION_TYPE */
+        }
         times[iterationNumber][threadId][1] = rdtsc.end(threadId);
         // if (!updated) return false; TODO
 
@@ -290,7 +313,7 @@ bool doAll() {
 }
 
 void doPrepare() {
-    doReorder();
+    //doReorder();
 
     vertexIds = new vid_t[vertexCount + 1];
     vertexIds[0] = 0;
@@ -312,7 +335,7 @@ void doPrepare() {
         }
 #pragma omp barrier
 
-#if 0
+#if 1
         eid_t degreeEnd = int64_t(edgesCount) * (threadId + 1) / threadsCount;
         eid_t degreeSum = 0;
         for (vid_t i = 0; i < vertexCount; ++i) {

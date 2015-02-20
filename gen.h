@@ -12,6 +12,7 @@
 typedef int32_t vid_t;
 typedef int64_t eid_t;
 typedef double weight_t;
+typedef uint64_t thread_vector_t;
 
 typedef std::pair<vid_t, vid_t> pvv;
 typedef std::pair<eid_t, int> pei;
@@ -52,6 +53,11 @@ static void doReorder() {
 #else
     // do nothing
 #endif
+}
+
+template<typename T>
+inline T bit(int shift) {
+    return T(1) << shift;
 }
 
 int64_t currentNanoTime();
