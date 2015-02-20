@@ -37,17 +37,19 @@ Result **localResult, *bestResult;
 double times[kMaxThreads][kMaxIterations][40];
 
 bool haveOuterComps[kMaxThreads];
-//Stat<eid_t> skipEdges;
-//Stat<vid_t> activeComps;
+#ifdef USE_SKIP_LAST_ITER
+vid_t aliveComponents;
+#endif
 
 
 
 bool doAll() {
     Eo(iterationNumber);
     int updated = 0; // reduce stage 
+    int diedComponents = 0; // merge stage
     weight_t tmpTaskResult = 0.0; // merge stage
 
-#pragma omp parallel
+#pragma omp parallel reduction(+:diedComponents)
     {
         const int threadId = omp_get_thread_num();
         stickThisThreadToCore(threadId);
@@ -259,6 +261,9 @@ bool doAll() {
             if (comp[oc] == i) {
                 if (i < oc) {
                     comp[i] = i;
+#ifdef USE_SKIP_LAST_ITER
+                    ++diedComponents;
+#endif /* USE_SKIP_LAST_ITER */
                 } else {
                     comp[i] = oc;
                     tmpTaskResult += best.weight;
@@ -272,6 +277,16 @@ bool doAll() {
         }
         times[iterationNumber][threadId][2] = rdtsc.end(threadId);
     }
+
+#ifdef USE_SKIP_LAST_ITER
+    //aliveComponents -= diedComponents;
+    aliveComponents = diedComponents;
+    E(diedComponents); Eo(aliveComponents);
+    if (aliveComponents == 1) {
+        updated = 0;
+        goto force_exit;
+    }
+#endif /* USE_SKIP_LAST_ITER */
 
     //
     // pointer jumping
@@ -307,6 +322,9 @@ bool doAll() {
         }
     }
 
+#ifdef USE_SKIP_LAST_ITER
+force_exit:
+#endif
     taskResult += tmpTaskResult;
     ++iterationNumber;
     return updated;
@@ -314,6 +332,9 @@ bool doAll() {
 
 void doPrepare() {
     //doReorder();
+#ifdef USE_SKIP_LAST_ITER
+    aliveComponents = vertexCount;
+#endif /* USE_SKIP_LAST_ITER */
 
     vertexIds = new vid_t[vertexCount + 1];
     vertexIds[0] = 0;
