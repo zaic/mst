@@ -23,7 +23,7 @@ boruvka_simple.out: gen.o boruvka_simple.cpp makefile.h
 	${CXX} ${CXXFLAGS} $^ -o $@
 
 boruvka_el.out: gen.o boruvka_el.cpp makefile.h
-	${CXX} ${CXXFLAGS} -DUSE_FAST_REDUCTION -DUSE_REDUCTION_SIMPLE -DUSE_SKIP_LAST_ITER $^ -o $@
+	${CXX} ${CXXFLAGS} -DUSE_FAST_REDUCTION -DUSE_REDUCTION_SIMPLE -DUSE_SKIP_LAST_ITER -DUSE_COMPRESSq $^ -o $@
 
 boruvka_el_offset.out: gen.o boruvka_el_offset.cpp makefile.h
 	${CXX} ${CXXFLAGS} -DUSE_SKIP_LOOPS=6 -DUSE_REDUCTION_TREE $^ -o $@

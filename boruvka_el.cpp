@@ -40,6 +40,11 @@ bool haveOuterComps[kMaxThreads];
 #ifdef USE_SKIP_LAST_ITER
 vid_t aliveComponents;
 #endif /* USE_SKIP_LAST_ITER */
+#ifdef USE_COMPRESS
+vid_t *generatedComps;
+vid_t lastUsedVid;
+vid_t prevUsedVid;
+#endif /* USE_COMPRESS */
 
 
 
@@ -91,11 +96,12 @@ bool doAll() {
             if (edgesStart >= edgesEnd) continue;
             
             const vid_t cv = comp[v];
+            //assert(prevUsedVid <= v && v < lastUsedVid);
             weight_t startWeight = edges[edgesStart].weight;
             eid_t newEdgesStart = edgesStart;
 #ifdef USE_FAST_REDUCTION
             if (cv < vertexIds[threadId] || cv >= vertexIds[threadId + 1]) outerComps = true;
-#endif
+#endif /* USE_FAST_REDUCTION */
 
             for (eid_t e = edgesStart; e < edgesEnd; ++e) {
                 weight_t weight = edges[e].weight;
@@ -155,7 +161,11 @@ bool doAll() {
 
 #if defined(USE_REDUCTION_SIMPLE)
 #pragma omp for reduction(+:updated) nowait
+#ifdef USE_COMPRESS
+            for (vid_t i = prevUsedVid; i < lastUsedVid; ++i) {
+#else
             for (vid_t i = 0; i < vertexCount; ++i) {
+#endif /* USE_COMPRESS */
                 if (comp[i] == i) {
                     thread_vector_t haveResult = 0;
                     for (int j = 0; j < threadsCount; ++j)
@@ -225,8 +235,18 @@ bool doAll() {
         // merge components
         //
         rdtsc.start(threadId);
+        vid_t localGeneratedComps = 0;
+#ifdef USE_COMPRESS
+        const weight_t MAX_DROPPED_WEIGHT = MAX_WEIGHT + 0.3 * iterationNumber;
+#else
+        const weight_t MAX_DROPPED_WEIGHT = MAX_WEIGHT + 0.1;
+#endif /* USE_COMPRESS */
 #pragma omp for reduction(+:tmpTaskResult) nowait
+#ifdef USE_COMPRESS
+        for (vid_t i = prevUsedVid; i < lastUsedVid; ++i) {
+#else
         for (vid_t i = 0; i < vertexCount; ++i) {
+#endif /* USE_COMPRESS */
             Result& best = bestResult[i];
             if (best.weight > MAX_WEIGHT) continue;
             vid_t oc = best.destComp;
@@ -234,6 +254,9 @@ bool doAll() {
             if (comp[oc] == i) {
                 if (i < oc) {
                     comp[i] = i;
+#ifdef USE_COMPRESS
+                    ++localGeneratedComps;
+#endif /* USE_COMPRESS */
 #ifdef USE_SKIP_LAST_ITER
                     ++diedComponents;
 #endif /* USE_SKIP_LAST_ITER */
@@ -241,15 +264,40 @@ bool doAll() {
                     comp[i] = oc;
                     tmpTaskResult += best.weight;
                 }
-                bestResult[i].weight = MAX_WEIGHT + 0.1;
+                bestResult[i].weight = MAX_DROPPED_WEIGHT;
             } else {
                 tmpTaskResult += best.weight;
                 comp[i] = oc;
-                bestResult[i].weight = MAX_WEIGHT + 0.1;
+                bestResult[i].weight = MAX_DROPPED_WEIGHT;
             }
         }
         times[iterationNumber][threadId][2] = rdtsc.end(threadId);
+
+#ifdef USE_COMPRESS
+        generatedComps[threadId] = localGeneratedComps;
+#pragma omp barrier
+#pragma omp single
+        {
+            for (int i = 1; i < threadsCount; ++i)
+                generatedComps[i] += generatedComps[i - 1];
+        }
+#pragma omp barrier
+
+        //
+        // compress component data
+        //
+        vid_t currentVid = lastUsedVid + (threadId ? generatedComps[threadId - 1] : 0);
+#pragma omp for nowait
+        for (vid_t i = prevUsedVid; i < lastUsedVid; ++i) if (comp[i] == i && bestResult[i].weight == MAX_DROPPED_WEIGHT)
+            comp[i] = currentVid++;
+        //E(vertexCount);  E(currentVid); E(lastUsedVid); Eo(localGeneratedComps);
+        assert(currentVid == lastUsedVid + generatedComps[threadId]);
+#endif /* USE_COMPRESS */
     }
+#ifdef USE_COMPRESS
+    prevUsedVid = lastUsedVid;
+    lastUsedVid += generatedComps[threadsCount - 1];
+#endif /* USE_COMPRESS */
 
 #ifdef USE_SKIP_LAST_ITER
     aliveComponents = diedComponents;
@@ -262,25 +310,38 @@ bool doAll() {
     //
     // pointer jumping
     //
-    int changed = 100500;
+    int changed0 = 0, changed1 = 0, changed = 100500;
     while (changed) {
-        changed = 0;
+        changed0 = changed1 = 0;
 #pragma omp parallel 
         {
             const int threadId = omp_get_thread_num();
             rdtsc.start(threadId);
-#pragma omp for reduction(+:changed) nowait
+#pragma omp for reduction(+:changed0) nowait
             for (vid_t i = 0; i < vertexCount; ++i) {
                 vid_t myComp = comp[i];
                 if (myComp == i) continue;
                 vid_t parentComp = comp[myComp];
                 if (myComp != parentComp) {
                     comp[i] = parentComp;
-                    changed = 1;
+                    changed0 = 1;
                 }
             }
-            times[iterationNumber][threadId][3] = rdtsc.end(threadId);
+#ifdef USE_COMPRESS
+#pragma omp for reduction(+:changed1) nowait
+            for (vid_t i = vertexCount; i < lastUsedVid; ++i) {
+                vid_t myComp = comp[i];
+                if (myComp == i) continue;
+                vid_t parentComp = comp[myComp];
+                if (myComp != parentComp) {
+                    comp[i] = parentComp;
+                    changed1 = 1;
+                }
+            }
+#endif /* USE_COMPRESS */
+            times[iterationNumber][threadId][3] += rdtsc.end(threadId);
         }
+        changed = changed0 + changed1;
     }
 
 #ifdef USE_SKIP_LAST_ITER
@@ -297,15 +358,27 @@ void doPrepare() {
     aliveComponents = vertexCount;
 #endif /* USE_SKIP_LAST_ITER */
 
-    vertexIds = new vid_t[vertexCount + 1];
+    vertexIds = new vid_t[vertexCount + 1]; // threads & align
     vertexIds[0] = 0;
 
+#ifdef USE_COMPRESS
+    bestResult = new Result[vertexCount * 2];
+    comp = new vid_t[vertexCount * 2];
+    for (vid_t i = 0; i < vertexCount * 2; ++i)
+        comp[i] = i;
+#else
+    bestResult = new Result[vertexCount];
     comp = new vid_t[vertexCount];
     for (vid_t i = 0; i < vertexCount; ++i)
         comp[i] = i;
+#endif /* USE_COMPRESS */
 
-    bestResult = new Result[vertexCount];
     startEdgesIds = new eid_t[vertexCount];
+#ifdef USE_COMPRESS
+    generatedComps = new vid_t[threadsCount];
+    lastUsedVid = vertexCount;
+    prevUsedVid = 0;
+#endif /* USE_COMPRESS */
 
 #pragma omp parallel
     {
@@ -344,9 +417,15 @@ void doPrepare() {
         assert(vertexIds[threadId + 1] > 0);
 #endif /* vertexes distribution */
 
+#ifdef USE_COMPRESS
+        localResult[threadId] = new Result[vertexCount * 2];
+        for (vid_t i = 0; i < vertexCount * 2; ++i)
+            localResult[threadId][i] = Result{MAX_WEIGHT + 0.1, 0, 0, 0};
+#else
         localResult[threadId] = new Result[vertexCount];
         for (vid_t i = 0; i < vertexCount; ++i)
             localResult[threadId][i] = Result{MAX_WEIGHT + 0.1, 0, 0, 0};
+#endif /* USE_COMPRESS */
 
         for (vid_t i = vertexIds[threadId]; i < vertexIds[threadId + 1]; ++i) {
             sort(edges + edgesIds[i], edges + edgesIds[i + 1], EdgeWeightCmp());
