@@ -52,10 +52,10 @@ int main(int argc, char *argv[]) {
             es.push_back(BiEdge{v, u, w});
         }
     }
+    sort(es.begin(), es.end());
     prepareTime += currentNanoTime();
 
     int64_t calcTime = -currentNanoTime();
-    sort(es.begin(), es.end());
 
     weight_t result = 0.0;
     snm.init(vertexCount);
