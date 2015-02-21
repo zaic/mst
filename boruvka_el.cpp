@@ -46,7 +46,7 @@ bool haveOuterComps[kMaxThreads];
 vid_t aliveComponents;
 #endif /* USE_SKIP_LAST_ITER */
 #ifdef USE_COMPRESS
-vid_t *generatedComps;
+int64_t *generatedComps;
 vid_t lastUsedVid;
 vid_t prevUsedVid;
 #endif /* USE_COMPRESS */
@@ -295,7 +295,6 @@ bool doAll() {
 #pragma omp for nowait
         for (vid_t i = prevUsedVid; i < lastUsedVid; ++i) if (comp[i] == i && bestResult[i].weight == MAX_DROPPED_WEIGHT)
             comp[i] = currentVid++;
-        //E(vertexCount);  E(currentVid); E(lastUsedVid); Eo(localGeneratedComps);
         assert(currentVid == lastUsedVid + generatedComps[threadId]);
 #endif /* USE_COMPRESS */
     }
@@ -417,10 +416,21 @@ void doPrepare() {
     vertexIds[0] = 0;
 
 #ifdef USE_COMPRESS
-    bestResult = new Result[vertexCount * 2];
-    comp = new vid_t[vertexCount * 2];
-    for (vid_t i = 0; i < vertexCount * 2; ++i)
+    // bestResult = new Result[vertexCount * 2]; ALLOC
+    bestResult = static_cast<Result*>(malloc(sizeof(Result) * vertexCount * 2));
+    // comp = new vid_t[vertexCount * 2]; ALLOC
+    comp = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount * 2));
+#pragma omp parallel for
+    for (vid_t i = 0; i < vertexCount; ++i) {
         comp[i] = i;
+        bestResult[i].weight = 0;
+    }
+#pragma omp parallel for
+    for (vid_t i = vertexCount; i < vertexCount * 2; ++i) {
+        comp[i] = i;
+        bestResult[i].weight = 0;
+    }
+
 #else
     bestResult = new Result[vertexCount];
     comp = new vid_t[vertexCount];
@@ -428,9 +438,11 @@ void doPrepare() {
         comp[i] = i;
 #endif /* USE_COMPRESS */
 
-    startEdgesIds = new eid_t[vertexCount];
+    // startEdgesIds = new eid_t[vertexCount]; ALLOC
+    startEdgesIds = static_cast<eid_t*>(malloc(sizeof(eid_t) * vertexCount));
 #ifdef USE_COMPRESS
-    generatedComps = new vid_t[threadsCount];
+    //generatedComps = new vid_t[threadsCount];
+    generatedComps = static_cast<int64_t*>(malloc(sizeof(int64_t) * threadsCount));
     lastUsedVid = vertexCount;
     prevUsedVid = 0;
 #endif /* USE_COMPRESS */
