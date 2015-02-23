@@ -314,7 +314,7 @@ bool doAll() {
     aliveComponents = diedComponents;
     if (aliveComponents == 1) {
         updated = 0;
-        goto force_exit;
+        //goto force_exit;
     }
 #endif /* USE_SKIP_LAST_ITER */
 
@@ -429,24 +429,25 @@ void doReset() {
         bestResult[i].weight = 0;
     }
 #else
-    bestResult = new Result[vertexCount];
-    comp = new vid_t[vertexCount];
     for (vid_t i = 0; i < vertexCount; ++i)
         comp[i] = i;
 #endif /* USE_COMPRESS */
 #ifdef USE_COMPRESS
     //generatedComps = new vid_t[threadsCount];
-    generatedComps = static_cast<int64_t*>(malloc(sizeof(int64_t) * threadsCount));
+    //generatedComps = static_cast<int64_t*>(malloc(sizeof(int64_t) * threadsCount));
     lastUsedVid = vertexCount;
     prevUsedVid = 0;
 #endif /* USE_COMPRESS */
 #pragma omp parallel
     {
         const int threadId = omp_get_thread_num();
+        // TODO fix
 #ifdef USE_COMPRESS
+#pragma omp for
         for (vid_t i = 0; i < vertexCount * 2; ++i)
             localResult[threadId][i] = Result{MAX_WEIGHT + 0.1, 0};
 #else
+#pragma omp for
         for (vid_t i = 0; i < vertexCount; ++i)
             localResult[threadId][i] = Result{MAX_WEIGHT + 0.1, 0};
 #endif /* USE_COMPRESS */
