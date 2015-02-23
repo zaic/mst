@@ -1,9 +1,11 @@
 #include "gen.h"
 #include <cassert>
+#include <cstring>
 #include <cstdio>
 #include <algorithm>
 #include <set>
 #include <tuple>
+#include <map>
 #include <vector>
 #include <numeric>
 #include "stat.h"
@@ -25,6 +27,7 @@ eid_t *startEdgesIds;
 struct Result {
     weight_t weight;
     vid_t destComp;
+    eid_t edgeId;
     //vid_t from, to;
 
     bool operator<(const Result& o) const {
@@ -117,7 +120,7 @@ bool doAll() {
                 if (cu == cv) continue;
 
                 if (weight < result[cv].weight || (weight == result[cv].weight && cu < result[cv].destComp)) {
-                    result[cv] = Result{edges[e].weight, cu};
+                    result[cv] = Result{edges[e].weight, cu, e};
                 }
                 if (weight > startWeight) {
                     startWeight = weight;
@@ -153,6 +156,7 @@ bool doAll() {
                     bestResult[v] = localResult[threadId][v];
                     if (localResult[threadId][v].weight <= MAX_WEIGHT) {
                         comp[v] = localResult[threadId][v].destComp;
+                        //isCoolEdge[localResult[threadId][v].edgeId] = true;
                         localUpdated = 1;
                         localResult[threadId][v].weight = MAX_WEIGHT + 0.1;
                     }
@@ -188,6 +192,7 @@ bool doAll() {
                     } else {
                         bestResult[i] = localResult[bestThread][i];
                         comp[i] = localResult[bestThread][i].destComp;
+                        //isCoolEdge[localResult[bestThread][i].edgeId] = true;
                         updated = 1;
                     }
 
@@ -268,10 +273,12 @@ bool doAll() {
                 } else {
                     comp[i] = oc;
                     tmpTaskResult += best.weight;
+                    isCoolEdge[best.edgeId] = true;
                 }
                 bestResult[i].weight = MAX_DROPPED_WEIGHT;
             } else {
                 tmpTaskResult += best.weight;
+                isCoolEdge[best.edgeId] = true;
                 comp[i] = oc;
                 bestResult[i].weight = MAX_DROPPED_WEIGHT;
             }
@@ -406,14 +413,61 @@ force_exit:
     return updated;
 }
 
+void doReset() {
+    iterationNumber = 0;
+
+    memset(isCoolEdge, 0, edgesCount);
+#ifdef USE_COMPRESS
+#pragma omp parallel for
+    for (vid_t i = 0; i < vertexCount; ++i) {
+        comp[i] = i;
+        bestResult[i].weight = 0;
+    }
+#pragma omp parallel for
+    for (vid_t i = vertexCount; i < vertexCount * 2; ++i) {
+        comp[i] = i;
+        bestResult[i].weight = 0;
+    }
+#else
+    bestResult = new Result[vertexCount];
+    comp = new vid_t[vertexCount];
+    for (vid_t i = 0; i < vertexCount; ++i)
+        comp[i] = i;
+#endif /* USE_COMPRESS */
+#ifdef USE_COMPRESS
+    //generatedComps = new vid_t[threadsCount];
+    generatedComps = static_cast<int64_t*>(malloc(sizeof(int64_t) * threadsCount));
+    lastUsedVid = vertexCount;
+    prevUsedVid = 0;
+#endif /* USE_COMPRESS */
+#pragma omp parallel
+    {
+        const int threadId = omp_get_thread_num();
+#ifdef USE_COMPRESS
+        for (vid_t i = 0; i < vertexCount * 2; ++i)
+            localResult[threadId][i] = Result{MAX_WEIGHT + 0.1, 0};
+#else
+        for (vid_t i = 0; i < vertexCount; ++i)
+            localResult[threadId][i] = Result{MAX_WEIGHT + 0.1, 0};
+#endif /* USE_COMPRESS */
+
+        for (vid_t i = vertexIds[threadId]; i < vertexIds[threadId + 1]; ++i) {
+            const eid_t startEdge = edgesIds[i];
+            const eid_t endEdge = edgesIds[i + 1];
+            startEdgesIds[i] = edgesIds[i];
+        }
+    }
+}
+
 void doPrepare() {
     //doReorder();
 #ifdef USE_SKIP_LAST_ITER
     aliveComponents = vertexCount;
 #endif /* USE_SKIP_LAST_ITER */
 
-    vertexIds = new vid_t[vertexCount + 1]; // threads & align
+    vertexIds = new vid_t[vertexCount + 1]; // TODO threads & align
     vertexIds[0] = 0;
+    isCoolEdge = new bool[edgesCount]; // TODO NUMA
 
 #ifdef USE_COMPRESS
     // bestResult = new Result[vertexCount * 2]; ALLOC
@@ -495,7 +549,11 @@ void doPrepare() {
 #endif /* USE_COMPRESS */
 
         for (vid_t i = vertexIds[threadId]; i < vertexIds[threadId + 1]; ++i) {
-            sort(edges + edgesIds[i], edges + edgesIds[i + 1], EdgeWeightCmp());
+            const eid_t startEdge = edgesIds[i];
+            const eid_t endEdge = edgesIds[i + 1];
+            for (eid_t e = startEdge; e < endEdge; ++e)
+                edges[e].origOffset = e - startEdge;
+            sort(edges + startEdge, edges + endEdge, EdgeWeightCmp());
             startEdgesIds[i] = edgesIds[i];
         }
     }
@@ -515,7 +573,7 @@ void warmup() {
     }
 }
 
-
+#ifndef ON_DISLAB
 int main(int argc, char *argv[]) {
     if (argc < 2) {
         fprintf(stderr, "Usage: %s input\n", argv[0]);
@@ -551,3 +609,48 @@ int main(int argc, char *argv[]) {
 
     return 0;
 }
+#else
+extern "C" void init_mst(graph_t *G) {   
+    convertAll(G);
+    //warmup(); TODO?
+    doPrepare();
+}   
+
+extern "C" void* MST(graph_t *) {
+    doReset();
+    while (doAll());
+    return NULL;
+}
+
+extern "C" void convert_to_output(graph_t *, void* , forest_t *trees_output) {
+    map<vid_t, vector<eid_t>> treesInMap;
+    for (vid_t i = 0; i < vertexCount; ++i) if (comp[i] == i) {
+        treesInMap[i] = vector<eid_t>();
+    }
+    double sum = 0;
+    for (vid_t v = 0; v < vertexCount; ++v) {
+        const eid_t startEdge = edgesIds[v];
+        const eid_t endEdge = edgesIds[v + 1];
+        for (eid_t e = startEdge; e < endEdge; ++e) if (isCoolEdge[e]) {
+            vid_t to = comp[edges[e].dest];
+            sum += edges[e].weight;
+            treesInMap[to].push_back(startEdge + edges[e].origOffset);
+        }
+    }
+    trees_output->numTrees = treesInMap.size();
+    trees_output->numEdges = vertexCount - trees_output->numTrees;
+    trees_output->p_edge_list = static_cast<edge_id_t*>(malloc(sizeof(edge_id_t) * 2 * trees_output->numTrees));
+    trees_output->edge_id     = static_cast<edge_id_t*>(malloc(sizeof(edge_id_t) * trees_output->numEdges));
+    vid_t currentTree = 0;
+    vid_t currentEdge = 0;
+    for (const auto& tree : treesInMap) {
+        trees_output->p_edge_list[currentTree++] = currentEdge;
+        for (eid_t eid : tree.second)
+            trees_output->edge_id[currentEdge++] = eid;
+        trees_output->p_edge_list[currentTree++] = currentEdge;
+    }
+}
+
+extern "C" void finalize_mst(graph_t *) {
+}
+#endif

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "GraphHPC/defs.h"
 #include <cinttypes>
 #include <utility>
 #include <iostream>
@@ -21,6 +22,7 @@ typedef std::pair<vid_t, int> pvi;
 
 struct Edge {
     vid_t dest;
+    int origOffset;
     weight_t weight;
 };
 
@@ -38,10 +40,12 @@ extern int threadsCount;
 extern int iterationNumber;
 
 extern bool *componentEnd;
+extern bool *isCoolEdge;
 
 extern const weight_t MAX_WEIGHT;
 
 void readAll(char *filename);
+void convertAll(graph_t *G);
 
 void doReorderBfs();
 void doReorderSimple();

@@ -19,6 +19,7 @@ vid_t vertexCount;
 eid_t edgesCount;
 eid_t *edgesIds;
 Edge *edges;
+bool *isCoolEdge;
 int threadsCount;
 int iterationNumber;
 
@@ -204,7 +205,29 @@ void readAll(char *filename) {
         fread(edges + edgeBegin, sizeof(Edge), edgeEnd - edgeBegin, f);
     }
     fclose(f);
+}
 
+void convertAll(graph_t *G) {
+    iterationNumber = 0;
+#pragma omp parallel
+    {
+#pragma omp master
+        {
+            threadsCount = omp_get_num_threads();
+        }
+    }
+
+    // TODO NUMA
+    vertexCount = G->n;
+    edgesCount = G->m;
+    edgesIds = (eid_t*)malloc(sizeof(eid_t) * (vertexCount + 1));
+    edges = (Edge*)malloc(sizeof(Edge) * (edgesCount));
+    for (vid_t i = 0; i <= vertexCount; ++i)
+        edgesIds[i] = static_cast<eid_t>(G->rowsIndices[i]);
+    for (eid_t i = 0; i < edgesCount; ++i) {
+        edges[i].dest = G->endV[i];
+        edges[i].weight = G->weights[i];
+    }
 }
 
 //

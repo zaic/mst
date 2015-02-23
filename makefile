@@ -1,7 +1,7 @@
 #if 0
 CXX=icpc
-CXXFLAGS=-O3 -g -lrt -lpthread -march=native -std=c++11 -Wall -Wextra -Wshadow -Wno-unused-result -fopenmp -DON_NUMA -pg -DUSE_EDGE_STRUCT -DON_HOME -DUSE_REORDER_BFS -DUSE_SKIP_LOOPSq=5
-EXE=vector_test.out graphviz.out gen_simple.out gen_cube.out turboboost_stub.out reference.out boruvka_simple.out boruvka_el.out boruvka_el_uma.out boruvka_el_seq.out boruvka_al_merge.out boruvka_al_copy_dfs.out boruvka_al_copy_bfs.out boruvka_fl_bfs_list.out boruvka_fl_bfs_vector.out boruvka_fl_pj.out boruvka_el_offset.out
+CXXFLAGS=-O0 -g -lrt -lpthread -march=native -std=c++11 -Wall -Wextra -Wshadow -Wno-unused-result -fopenmp -DON_NUMA -pg -DUSE_EDGE_STRUCT -DON_HOME -DUSE_REORDER_BFS -DUSE_SKIP_LOOPS=0
+EXE=vector_test.out graphviz.out gen_simple.out gen_cube.out turboboost_stub.out reference.out boruvka_simple.out boruvka_el.out boruvka_el_uma.out boruvka_el_seq.out boruvka_al_merge.out boruvka_al_copy_dfs.out boruvka_al_copy_bfs.out boruvka_fl_bfs_list.out boruvka_fl_bfs_vector.out boruvka_fl_pj.out boruvka_el_offset.out boruvka_el.o
 
 all: ${EXE}
 
@@ -23,7 +23,10 @@ boruvka_simple.out: gen.o boruvka_simple.cpp makefile.h
 	${CXX} ${CXXFLAGS} $^ -o $@
 
 boruvka_el.out: gen.o boruvka_el.cpp makefile.h
-	${CXX} ${CXXFLAGS} -DUSE_FAST_REDUCTION -DUSE_REDUCTION_SIMPLE -DUSE_SKIP_LAST_ITER -DUSE_COMPRESSq $^ -o $@
+	${CXX} ${CXXFLAGS} -DUSE_FAST_REDUCTION -DUSE_REDUCTION_SIMPLE -DUSE_SKIP_LAST_ITER -DUSE_COMPRESS $^ -o $@
+
+boruvka_el.o: boruvka_el.cpp gen.o makefile.h
+	${CXX} ${CXXFLAGS} -DUSE_FAST_REDUCTION -DUSE_REDUCTION_SIMPLE -DUSE_SKIP_LAST_ITERq -DUSE_COMPRESS boruvka_el.cpp -DON_DISLAB -c -o $@
 
 boruvka_el_offset.out: gen.o boruvka_el_offset.cpp makefile.h
 	${CXX} ${CXXFLAGS} -DUSE_SKIP_LOOPS=6 -DUSE_REDUCTION_TREE $^ -o $@
