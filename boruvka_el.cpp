@@ -416,38 +416,44 @@ force_exit:
 void doReset() {
     iterationNumber = 0;
 
-    memset(isCoolEdge, 0, edgesCount);
 #ifdef USE_COMPRESS
-#pragma omp parallel for
-    for (vid_t i = 0; i < vertexCount; ++i) {
-        comp[i] = i;
-        bestResult[i].weight = 0;
-    }
-#pragma omp parallel for
-    for (vid_t i = vertexCount; i < vertexCount * 2; ++i) {
-        comp[i] = i;
-        bestResult[i].weight = 0;
-    }
-#else
-    for (vid_t i = 0; i < vertexCount; ++i)
-        comp[i] = i;
-#endif /* USE_COMPRESS */
-#ifdef USE_COMPRESS
-    //generatedComps = new vid_t[threadsCount];
-    //generatedComps = static_cast<int64_t*>(malloc(sizeof(int64_t) * threadsCount));
     lastUsedVid = vertexCount;
     prevUsedVid = 0;
 #endif /* USE_COMPRESS */
 #pragma omp parallel
     {
         const int threadId = omp_get_thread_num();
+
+#pragma omp for nowait
+        for (eid_t e = 0; e < edgesCount; ++e)
+            isCoolEdge[e] = false;
+
+#ifdef USE_COMPRESS
+#pragma omp for nowait
+    for (vid_t i = 0; i < vertexCount; ++i) {
+        comp[i] = i;
+        bestResult[i].weight = 0;
+    }
+#pragma omp for nowait
+    for (vid_t i = vertexCount; i < vertexCount * 2; ++i) {
+        comp[i] = i;
+        bestResult[i].weight = 0;
+    }
+#else
+#error eh
+#endif /* USE_COMPRESS */
+
+#pragma omp for nowait
+        for (vid_t i = 0; i < vertexCount; ++i)
+            comp[i] = i;
+
         // TODO fix
 #ifdef USE_COMPRESS
-#pragma omp for
+#pragma omp for nowait
         for (vid_t i = 0; i < vertexCount * 2; ++i)
             localResult[threadId][i] = Result{MAX_WEIGHT + 0.1, 0};
 #else
-#pragma omp for
+#pragma omp for nowait
         for (vid_t i = 0; i < vertexCount; ++i)
             localResult[threadId][i] = Result{MAX_WEIGHT + 0.1, 0};
 #endif /* USE_COMPRESS */
