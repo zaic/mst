@@ -160,6 +160,8 @@ bool doAll() {
                         localUpdated = 1;
                         localResult[threadId][v].weight = MAX_WEIGHT + 0.1;
                     }
+                } else {
+                    bestResult[v].weight = MAX_WEIGHT + 0.1; // TODO ???
                 }
             }
 
@@ -328,6 +330,7 @@ bool doAll() {
 #pragma omp parallel 
         {
             const int threadId = omp_get_thread_num();
+            stickThisThreadToCore(threadId);
             rdtsc.start(threadId);
 #pragma omp for reduction(+:changed) nowait
             for (vid_t i = vertexCount; i < prevUsedVid; ++i) {
@@ -390,6 +393,7 @@ bool doAll() {
         {
             const int threadId = omp_get_thread_num();
             rdtsc.start(threadId);
+            stickThisThreadToCore(threadId);
 #pragma omp for reduction(+:changed) nowait
             for (vid_t i = 0; i < vertexCount; ++i) {
                 const vid_t myComp = comp[i];
@@ -425,8 +429,8 @@ void doReset() {
         const int threadId = omp_get_thread_num();
 
 #pragma omp for nowait
-        for (eid_t e = 0; e < edgesCount; ++e)
-            isCoolEdge[e] = false;
+    for (eid_t e = 0; e < edgesCount; ++e)
+        isCoolEdge[e] = false;
 
 #ifdef USE_COMPRESS
 #pragma omp for nowait
@@ -435,12 +439,16 @@ void doReset() {
         bestResult[i].weight = 0;
     }
 #pragma omp for nowait
-    for (vid_t i = vertexCount; i < vertexCount * 2; ++i) {
+    for (vid_t i = vertexCount; i < vertexCount * 2; ++i) { // TODO fix len
         comp[i] = i;
         bestResult[i].weight = 0;
     }
 #else
-#error eh
+#pragma omp for nowait
+    for (vid_t i = 0; i < vertexCount; ++i) {
+        comp[i] = i;
+        bestResult[i].weight = 0;
+    }
 #endif /* USE_COMPRESS */
 
 #pragma omp for nowait
@@ -451,11 +459,11 @@ void doReset() {
 #ifdef USE_COMPRESS
 #pragma omp for nowait
         for (vid_t i = 0; i < vertexCount * 2; ++i)
-            localResult[threadId][i] = Result{MAX_WEIGHT + 0.1, 0};
+            localResult[threadId][i] = Result{MAX_WEIGHT + 0.1, 0, 0};
 #else
 #pragma omp for nowait
         for (vid_t i = 0; i < vertexCount; ++i)
-            localResult[threadId][i] = Result{MAX_WEIGHT + 0.1, 0};
+            localResult[threadId][i] = Result{MAX_WEIGHT + 0.1, 0, 0};
 #endif /* USE_COMPRESS */
 
         for (vid_t i = vertexIds[threadId]; i < vertexIds[threadId + 1]; ++i) {
@@ -472,9 +480,10 @@ void doPrepare() {
     aliveComponents = vertexCount;
 #endif /* USE_SKIP_LAST_ITER */
 
-    vertexIds = new vid_t[vertexCount + 1]; // TODO threads & align
+    vertexIds = new vid_t[threadsCount + 1]; // TODO threads & align
     vertexIds[0] = 0;
-    isCoolEdge = new bool[edgesCount]; // TODO NUMA
+    isCoolEdge = new bool[edgesCount](); // TODO NUMA
+    //memset(isCoolEdge, 0, edgesCount);
 
 #ifdef USE_COMPRESS
     // bestResult = new Result[vertexCount * 2]; ALLOC
@@ -529,8 +538,9 @@ void doPrepare() {
                 break;
             }
         }
+#elif 0
+        vertexIds[threadId + 1] = int64_t(vertexCount) * (threadId + 1) / threadsCount;
 #else
-        //vertexIds[threadId + 1] = int64_t(vertexCount) * (threadId + 1) / threadsCount;
         const eid_t degreeEnd = int64_t(edgesCount) * (threadId + 1) / threadsCount;
         eid_t degreeSum = 0;
         vertexIds[threadId + 1] = -1;
@@ -545,14 +555,16 @@ void doPrepare() {
         assert(vertexIds[threadId + 1] > 0);
 #endif /* vertexes distribution */
 
+#pragma omp barrier
+
 #ifdef USE_COMPRESS
         localResult[threadId] = new Result[vertexCount * 2];
         for (vid_t i = 0; i < vertexCount * 2; ++i)
-            localResult[threadId][i] = Result{MAX_WEIGHT + 0.1, 0};
+            localResult[threadId][i] = Result{MAX_WEIGHT + 0.1, 0, 0};
 #else
         localResult[threadId] = new Result[vertexCount];
         for (vid_t i = 0; i < vertexCount; ++i)
-            localResult[threadId][i] = Result{MAX_WEIGHT + 0.1, 0};
+            localResult[threadId][i] = Result{MAX_WEIGHT + 0.1, 0, 0};
 #endif /* USE_COMPRESS */
 
         for (vid_t i = vertexIds[threadId]; i < vertexIds[threadId + 1]; ++i) {
@@ -602,7 +614,7 @@ int main(int argc, char *argv[]) {
 
     fprintf(stderr, "%.3lf\n%.3lf\n", double(prepareTime) / 1e9, double(calcTime) / 1e9);
 
-#if 1
+#if 0
     for (int i = 0; i < iterationNumber; ++i) {
         fprintf(stderr, "iteration %2d\n", i);
         for (int j = 0; j < threadsCount; ++j) {
@@ -619,7 +631,7 @@ int main(int argc, char *argv[]) {
 #else
 extern "C" void init_mst(graph_t *G) {   
     convertAll(G);
-    //warmup(); TODO?
+    //warmup();
     doPrepare();
 }   
 
@@ -638,10 +650,14 @@ extern "C" void convert_to_output(graph_t *, void* , forest_t *trees_output) {
     for (vid_t v = 0; v < vertexCount; ++v) {
         const eid_t startEdge = edgesIds[v];
         const eid_t endEdge = edgesIds[v + 1];
-        for (eid_t e = startEdge; e < endEdge; ++e) if (isCoolEdge[e]) {
-            vid_t to = comp[edges[e].dest];
-            sum += edges[e].weight;
-            treesInMap[to].push_back(startEdge + edges[e].origOffset);
+        for (eid_t e = startEdge; e < endEdge; ++e) {
+            assert(0 <= e);
+            assert(e < edgesCount);
+            if (isCoolEdge[e]) {
+                vid_t to = comp[edges[e].dest];
+                sum += edges[e].weight;
+                treesInMap[to].push_back(startEdge + edges[e].origOffset);
+            }
         }
     }
     trees_output->numTrees = treesInMap.size();
