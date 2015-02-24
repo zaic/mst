@@ -1,4 +1,5 @@
 #include "gen.h"
+#include <set>
 #include <cassert>
 #include <cstdio>
 #include <time.h>
@@ -46,8 +47,8 @@ bool EdgeWeightCmp::operator()(const Edge& a, const Edge& b) const {
 void doReorderBfs() {
     stickThisThreadToCore(0);
 
-    componentEnd = new bool[vertexCount];
-    bool *visit = new bool[vertexCount];
+    componentEnd = new bool[vertexCount]();
+    bool *visit = new bool[vertexCount]();
     vid_t *que = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount));
     vid_t *rev = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount));
     vid_t fr = 0, bc = 0;
@@ -110,7 +111,7 @@ void doReorderBfs() {
 void doReorderSimple() {
     stickThisThreadToCore(0);
 
-    bool *visit = new bool[vertexCount];
+    bool *visit = new bool[vertexCount]();
     vid_t *que = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount));
     vid_t *rev = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount));
     vid_t pos = 0;
@@ -177,6 +178,7 @@ void readAll(char *filename) {
             threadsCount = omp_get_num_threads();
         }
     }
+    Eo(threadsCount);
 
     FILE *f = fopen(filename, "rb");
     assert(f);
@@ -217,6 +219,8 @@ void convertAll(graph_t *G) {
         }
     }
 
+    //std::set<weight_t> allWeight;
+
     // TODO NUMA
     vertexCount = G->n;
     edgesCount = G->m;
@@ -227,7 +231,9 @@ void convertAll(graph_t *G) {
     for (eid_t i = 0; i < edgesCount; ++i) {
         edges[i].dest = G->endV[i];
         edges[i].weight = G->weights[i];
+        //allWeight.insert(edges[i].weight);
     }
+    //Eo(allWeight.size());
 }
 
 //
