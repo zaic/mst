@@ -113,11 +113,29 @@ bool doAll() {
             
             const vid_t cv = comp[v];
             //assert(prevUsedVid <= v && v < lastUsedVid);
-            weight_t startWeight = edges[edgesStart].weight;
             eid_t newEdgesStart = edgesStart;
 #ifdef USE_FAST_REDUCTION
             if (cv < vertexIds[threadId] || cv >= vertexIds[threadId + 1]) outerComps = true;
 #endif /* USE_FAST_REDUCTION */
+
+#if 1
+            for (; newEdgesStart < edgesEnd; ++newEdgesStart) {
+                const vid_t u = edges[newEdgesStart].dest;
+                const vid_t cu = comp[u];
+                if (cu == cv) continue;
+                break;
+            }
+
+            if (newEdgesStart < edgesEnd) {
+                const weight_t weight = edges[newEdgesStart].weight;
+                if (weight < result[cv].weight) {
+                    const vid_t u = edges[newEdgesStart].dest;
+                    const vid_t cu = comp[u];
+                    result[cv] = Result{edges[newEdgesStart].weight, cu, newEdgesStart};
+                }
+            }
+#else
+            weight_t startWeight = edges[edgesStart].weight; // TODO fix!!!!!
 
             for (eid_t e = edgesStart; e < edgesEnd; ++e) {
                 weight_t weight = edges[e].weight;
@@ -135,6 +153,7 @@ bool doAll() {
                     newEdgesStart = e;
                 }
             }
+#endif
 
             if (newEdgesStart != edgesStart) startEdgesIds[v] = newEdgesStart;
         }
@@ -464,7 +483,7 @@ void doReset() {
 #pragma omp for nowait
     for (vid_t i = vertexCount; i < lastUsedVid; ++i) { // TODO fix len
         comp[i] = i;
-        //bestResult[i].weight = 0;
+        bestResult[i].weight = 0;
     }
 #else
 #pragma omp for nowait
