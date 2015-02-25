@@ -27,16 +27,14 @@ eid_t *startEdgesIds;
 struct Result {
     weight_t weight;
     vid_t destComp;
+#ifdef USE_RESULT_VERTEX
+    vid_t from;
+#else
     eid_t edgeId;
-    //vid_t from, to;
+#endif
 
     bool operator<(const Result& o) const {
-#if 0
-        if (weight != o.weight) return weight < o.weight;
-        return destComp < o.destComp;
-#else
         return weight < o.weight;
-#endif
     }
 };
 
@@ -131,7 +129,11 @@ bool doAll() {
                 if (weight < result[cv].weight) {
                     const vid_t u = edges[newEdgesStart].dest;
                     const vid_t cu = comp[u];
+#ifdef USE_RESULT_VERTEX
+                    result[cv] = Result{edges[newEdgesStart].weight, cu, v};
+#else
                     result[cv] = Result{edges[newEdgesStart].weight, cu, newEdgesStart};
+#endif
                 }
             }
 #else
@@ -303,12 +305,22 @@ bool doAll() {
                 } else {
                     comp[i] = oc;
                     tmpTaskResult += best.weight;
+#ifdef USE_RESULT_VERTEX
+                    const eid_t edgeId = startEdgesIds[best.from];
+                    isCoolEdge[edgeId] = true;
+#else
                     isCoolEdge[best.edgeId] = true;
+#endif /* USE_RESULT_VERTEX */
                 }
                 bestResult[i].weight = MAX_DROPPED_WEIGHT;
             } else {
                 tmpTaskResult += best.weight;
-                isCoolEdge[best.edgeId] = true;
+#ifdef USE_RESULT_VERTEX
+                    const eid_t edgeId = startEdgesIds[best.from];
+                    isCoolEdge[edgeId] = true;
+#else
+                    isCoolEdge[best.edgeId] = true;
+#endif /* USE_RESULT_VERTEX */
                 comp[i] = oc;
                 bestResult[i].weight = MAX_DROPPED_WEIGHT;
             }
