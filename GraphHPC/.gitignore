@@ -1,2 +1,12 @@
 rmat-[0-9][0-9].mst
 ssca2-[0-9][0-9].mst
+gen_RMAT
+gen_valid_info
+gen_SSCA2
+mst
+mst_reference
+mst_reference_boruvka
+mst_reference_mpi
+mst_zaic
+validation
+*.vinfo
