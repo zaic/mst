@@ -513,7 +513,9 @@ void doPrepare() {
 
     vertexIds = new vid_t[threadsCount + 1]; // TODO threads & align
     vertexIds[0] = 0;
-    isCoolEdge = new bool[edgesCount](); // TODO NUMA
+    isCoolEdge = static_cast<bool*>(malloc(edgesCount));// new bool[edgesCount](); // TODO NUMA
+#pragma omp parallel for
+    for (eid_t i = 0; i < edgesCount; ++i) isCoolEdge[i] = false;
     //memset(isCoolEdge, 0, edgesCount);
 
 #ifdef USE_COMPRESS
@@ -524,12 +526,12 @@ void doPrepare() {
 #pragma omp parallel for
     for (vid_t i = 0; i < vertexCount; ++i) {
         comp[i] = i;
-        bestResult[i].weight = 0;
+        //bestResult[i].weight = 0;
     }
 #pragma omp parallel for
     for (vid_t i = vertexCount; i < vertexCount * 2; ++i) {
         comp[i] = i;
-        bestResult[i].weight = 0;
+        //bestResult[i].weight = 0;
     }
 
 #else
