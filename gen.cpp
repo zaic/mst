@@ -226,12 +226,18 @@ void convertAll(graph_t *G) {
     edgesCount = G->m;
     edgesIds = (eid_t*)malloc(sizeof(eid_t) * (vertexCount + 1));
     edges = (Edge*)malloc(sizeof(Edge) * (edgesCount));
-    for (vid_t i = 0; i <= vertexCount; ++i)
-        edgesIds[i] = static_cast<eid_t>(G->rowsIndices[i]);
-    for (eid_t i = 0; i < edgesCount; ++i) {
-        edges[i].dest = G->endV[i];
-        edges[i].weight = G->weights[i];
-        //allWeight.insert(edges[i].weight);
+#pragma omp parallel
+    {
+        stickThisThreadToCore(omp_get_thread_num());
+#pragma omp for nowait
+        for (vid_t i = 0; i <= vertexCount; ++i)
+            edgesIds[i] = static_cast<eid_t>(G->rowsIndices[i]);
+#pragma omp for nowait
+        for (eid_t i = 0; i < edgesCount; ++i) {
+            edges[i].dest = G->endV[i];
+            edges[i].weight = G->weights[i];
+            //allWeight.insert(edges[i].weight);
+        }
     }
     //Eo(allWeight.size());
 }
