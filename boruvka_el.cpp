@@ -45,6 +45,10 @@ Result **localResult, *bestResult;
 double times[kMaxThreads][kMaxIterations][40];
 
 bool haveOuterComps[kMaxThreads];
+#ifdef USE_SKIP_LOOPS
+bool useSkipLoops = true;
+#endif /* USE_SKIP_LOOPS */
+eid_t loopsViewEdges, loopsSkipEdges; // USE_SKIP_LOOPS
 #ifdef USE_SKIP_LAST_ITER
 vid_t aliveComponents;
 #endif /* USE_SKIP_LAST_ITER */
@@ -62,7 +66,7 @@ bool doAll() {
     int diedComponents = 0; // merge stage
     weight_t tmpTaskResult = 0.0; // merge stage
 
-#pragma omp parallel reduction(+:diedComponents)
+#pragma omp parallel reduction(+:diedComponents) reduction(+:loopsViewEdges) reduction(+:loopsSkipEdges)
     {
         const int threadId = omp_get_thread_num();
         stickThisThreadToCore(threadId);
@@ -74,7 +78,7 @@ bool doAll() {
         auto result = localResult[threadId];
 
 #ifdef USE_SKIP_LOOPS
-        if (iterationNumber > USE_SKIP_LOOPS) {
+        if (iterationNumber >= USE_SKIP_LOOPS + 1 && useSkipLoops) {
             for (vid_t v = vertexIds[threadId]; v < vertexIds[threadId + 1]; ++v) {
                 const eid_t edgesStart = startEdgesIds[v];
                 const eid_t edgesEnd = edgesIds[v + 1];
@@ -88,6 +92,10 @@ bool doAll() {
                     const vid_t cu = comp[u];
                     if (cu == cv) continue;
                     break;
+                }
+                if (iterationNumber == USE_SKIP_LOOPS + 1) {
+                    loopsViewEdges += newEdgesStart - edgesStart + 1;
+                    loopsSkipEdges += newEdgesStart - edgesStart;
                 }
                 if (newEdgesStart != edgesStart) startEdgesIds[v] = newEdgesStart;
             }
@@ -409,6 +417,17 @@ bool doAll() {
     }
 #endif /* USE_COMPRESS */
 
+#ifdef USE_SKIP_LOOPS
+    if (loopsViewEdges) {
+        double skipRatio = double(loopsSkipEdges) / loopsViewEdges;
+        E(loopsViewEdges);
+        E(loopsSkipEdges);
+        Eo(skipRatio);
+        loopsViewEdges = loopsSkipEdges = 0;
+        if (skipRatio < 0.7) useSkipLoops = false;
+    }
+#endif
+
 #ifdef USE_SKIP_LAST_ITER
 force_exit:
 #endif /* USE_SKIP_LAST_ITER */
@@ -420,10 +439,6 @@ force_exit:
 void doReset() {
     iterationNumber = 0;
 
-#ifdef USE_COMPRESS
-    lastUsedVid = vertexCount;
-    prevUsedVid = 0;
-#endif /* USE_COMPRESS */
 #pragma omp parallel
     {
         const int threadId = omp_get_thread_num();
@@ -451,10 +466,6 @@ void doReset() {
     }
 #endif /* USE_COMPRESS */
 
-#pragma omp for nowait
-        for (vid_t i = 0; i < vertexCount; ++i)
-            comp[i] = i;
-
         // TODO fix
 #ifdef USE_COMPRESS
 #pragma omp for nowait
@@ -472,6 +483,11 @@ void doReset() {
             startEdgesIds[i] = edgesIds[i];
         }
     }
+
+#ifdef USE_COMPRESS
+    lastUsedVid = vertexCount;
+    prevUsedVid = 0;
+#endif /* USE_COMPRESS */
 }
 
 void doPrepare() {
@@ -629,19 +645,20 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 #else
-extern "C" void init_mst(graph_t *G) {   
+void init_mst(graph_t *G) {   
+    omp_set_num_threads(16);
     convertAll(G);
-    //warmup();
+    warmup();
     doPrepare();
 }   
 
-extern "C" void* MST(graph_t *) {
+void* MST(graph_t *) {
     doReset();
     while (doAll());
     return NULL;
 }
 
-extern "C" void convert_to_output(graph_t *, void* , forest_t *trees_output) {
+void convert_to_output(graph_t *, void* , forest_t *trees_output) {
     map<vid_t, vector<eid_t>> treesInMap;
     for (vid_t i = 0; i < vertexCount; ++i) if (comp[i] == i) {
         treesInMap[i] = vector<eid_t>();
@@ -674,6 +691,17 @@ extern "C" void convert_to_output(graph_t *, void* , forest_t *trees_output) {
     }
 }
 
-extern "C" void finalize_mst(graph_t *) {
+void finalize_mst(graph_t *) {
+#if 0
+    for (int i = 0; i < iterationNumber; ++i) {
+        fprintf(stderr, "iteration %2d\n", i);
+        for (int j = 0; j < threadsCount; ++j) {
+            fprintf(stderr, "%02d:   ", j);
+            for (int k = 0; k < 5; ++k)
+                fprintf(stderr, "%.6lf ", times[i][j][k]);
+            fputs("\n", stderr);
+        }
+    }
+#endif
 }
 #endif
