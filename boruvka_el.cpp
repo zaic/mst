@@ -79,7 +79,7 @@ bool doAll() {
 
 #ifdef USE_SKIP_LOOPS
         if (iterationNumber >= USE_SKIP_LOOPS + 1 && useSkipLoops) {
-            for (vid_t v = vertexIds[threadId]; v < vertexIds[threadId + 1]; ++v) {
+            for (vid_t v = vertexIds[threadId]; v < vertexIds[threadId + 1] - 1; ++v) { // TODO 1
                 const eid_t edgesStart = startEdgesIds[v];
                 const eid_t edgesEnd = edgesIds[v + 1];
                 if (edgesStart >= edgesEnd) continue;
@@ -169,6 +169,7 @@ bool doAll() {
                         localResult[threadId][v].weight = MAX_WEIGHT + 0.1;
                     }
                 } else {
+                    //assert(localResult[threadId][v].weight > MAX_WEIGHT);
                     bestResult[v].weight = MAX_WEIGHT + 0.1; // TODO ???
                 }
             }
@@ -438,38 +439,45 @@ force_exit:
 
 void doReset() {
     iterationNumber = 0;
+    taskResult = 0;
 
 #pragma omp parallel
     {
         const int threadId = omp_get_thread_num();
 
+#if 0
 #pragma omp for nowait
     for (eid_t e = 0; e < edgesCount; ++e)
         isCoolEdge[e] = false;
+#else
+    eid_t startOffset = int64_t(edgesCount) * (threadId + 0) / threadsCount;
+    eid_t endOffset   = int64_t(edgesCount) * (threadId + 1) / threadsCount;
+    memset(isCoolEdge + startOffset, 0, endOffset - startOffset);
+#endif
 
 #ifdef USE_COMPRESS
 #pragma omp for nowait
     for (vid_t i = 0; i < vertexCount; ++i) {
         comp[i] = i;
-        bestResult[i].weight = 0;
+        //bestResult[i].weight = 0;
     }
 #pragma omp for nowait
-    for (vid_t i = vertexCount; i < vertexCount * 2; ++i) { // TODO fix len
+    for (vid_t i = vertexCount; i < lastUsedVid; ++i) { // TODO fix len
         comp[i] = i;
-        bestResult[i].weight = 0;
+        //bestResult[i].weight = 0;
     }
 #else
 #pragma omp for nowait
     for (vid_t i = 0; i < vertexCount; ++i) {
         comp[i] = i;
-        bestResult[i].weight = 0;
+        //bestResult[i].weight = 0;
     }
 #endif /* USE_COMPRESS */
 
         // TODO fix
 #ifdef USE_COMPRESS
 #pragma omp for nowait
-        for (vid_t i = 0; i < vertexCount * 2; ++i)
+        for (vid_t i = 0; i < lastUsedVid; ++i) // TODO decrase to one?
             localResult[threadId][i] = Result{MAX_WEIGHT + 0.1, 0, 0};
 #else
 #pragma omp for nowait
@@ -477,17 +485,24 @@ void doReset() {
             localResult[threadId][i] = Result{MAX_WEIGHT + 0.1, 0, 0};
 #endif /* USE_COMPRESS */
 
+#if 0
         for (vid_t i = vertexIds[threadId]; i < vertexIds[threadId + 1]; ++i) {
             const eid_t startEdge = edgesIds[i];
             const eid_t endEdge = edgesIds[i + 1];
             startEdgesIds[i] = edgesIds[i];
         }
+#else
+        memcpy(startEdgesIds + vertexIds[threadId], edgesIds + vertexIds[threadId], sizeof(eid_t) * (vertexIds[threadId + 1] - vertexIds[threadId]));
+#endif
     }
 
 #ifdef USE_COMPRESS
     lastUsedVid = vertexCount;
     prevUsedVid = 0;
 #endif /* USE_COMPRESS */
+#ifdef USE_SKIP_LOOPS
+    useSkipLoops = true;
+#endif
 }
 
 void doPrepare() {
@@ -622,9 +637,13 @@ int main(int argc, char *argv[]) {
     doPrepare();
     prepareTime += currentNanoTime();
 
-    int64_t calcTime = -currentNanoTime();
-    while (doAll());
-    calcTime += currentNanoTime();
+    int64_t calcTime;
+    for (int i = 0; i < 10; ++i) {
+        calcTime = -currentNanoTime();
+        doReset();
+        while (doAll());
+        calcTime += currentNanoTime();
+    }
 
     printf("%.10lf\n", double(taskResult));
 
@@ -650,11 +669,15 @@ void init_mst(graph_t *G) {
     convertAll(G);
     warmup();
     doPrepare();
+    doReset();
 }   
 
 void* MST(graph_t *) {
+    int64_t prepareTime = -currentNanoTime();
     doReset();
+    prepareTime += currentNanoTime();
     while (doAll());
+    //fprintf(stderr, "prepare time is %.7f\n", double(prepareTime) / 1e9);
     return NULL;
 }
 
