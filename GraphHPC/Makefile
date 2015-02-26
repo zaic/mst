@@ -26,7 +26,7 @@ mst_reference_boruvka: main.o mst_reference_boruvka.o graph_tools.o
 #	${CXX} ${LDFLAGS} $^ -o $@ -lpthread -lrt -fopenmp
 
 mst_zaic: main_zaic.cpp graph_tools.o ../gen.o
-    ${CXX} ${CXXFLAGS} -lpthread -lrt -fopenmp $^ -o $@
+	${CXX} ${CXXFLAGS} -lpthread -lrt -fopenmp $^ -o $@
 
 
 # reference implementation	
