@@ -120,8 +120,7 @@ bool doAll() {
             for (; newEdgesStart < edgesEnd; ++newEdgesStart) {
                 const vid_t u = edges[newEdgesStart].dest;
                 const vid_t cu = comp[u];
-                if (cu == cv) continue;
-                break;
+                if (cu != cv) break;
             }
 
             if (newEdgesStart < edgesEnd) {
@@ -137,7 +136,7 @@ bool doAll() {
                 }
             }
 #else
-            weight_t startWeight = edges[edgesStart].weight; // TODO fix!!!!!
+            weight_t startWeight = edges[edgesStart].weight;
 
             for (eid_t e = edgesStart; e < edgesEnd; ++e) {
                 weight_t weight = edges[e].weight;
@@ -180,18 +179,19 @@ bool doAll() {
 
         if (doFastReduction) {
             int localUpdated = 0;
-            for (vid_t v = vertexIds[threadId]; v < vertexIds[threadId + 1]; ++v) {
+            const vid_t vto = vertexIds[threadId + 1];
+            for (vid_t v = vertexIds[threadId]; v < vto; ++v) {
                 if (comp[v] == v && localResult[threadId][v].weight <= MAX_WEIGHT) {
                     bestResult[v] = localResult[threadId][v];
-                    if (localResult[threadId][v].weight <= MAX_WEIGHT) {
+                    //if (localResult[threadId][v].weight <= MAX_WEIGHT) {
                         comp[v] = localResult[threadId][v].destComp;
                         //isCoolEdge[localResult[threadId][v].edgeId] = true;
                         localUpdated = 1;
                         localResult[threadId][v].weight = MAX_WEIGHT + 0.1;
-                    }
+                    //}
                 } else {
                     //assert(localResult[threadId][v].weight > MAX_WEIGHT);
-                    bestResult[v].weight = MAX_WEIGHT + 0.1; // TODO ???
+                    bestResult[v].weight = MAX_WEIGHT + 0.1;
                 }
             }
 
@@ -228,6 +228,7 @@ bool doAll() {
                         updated = 1;
                     }
 
+#pragma ivdep
                     for (int j = 0; j < threadsCount; ++j) if (haveResult & bit<thread_vector_t>(j)) {
                         localResult[j][i].weight = MAX_WEIGHT + 0.1;
                     }
