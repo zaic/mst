@@ -5,6 +5,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <algorithm>
 #ifdef __clang__
 #include "omp.h"
 #else
@@ -47,7 +48,7 @@ bool EdgeWeightCmp::operator()(const Edge& a, const Edge& b) const {
 void doReorderBfs() {
     stickThisThreadToCore(0);
 
-    componentEnd = new bool[vertexCount]();
+    //componentEnd = new bool[vertexCount]();
     bool *visit = new bool[vertexCount]();
     vid_t *que = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount));
     vid_t *rev = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount));
@@ -64,7 +65,7 @@ void doReorderBfs() {
                 que[bc++] = u;
             }
         }
-        componentEnd[bc - 1] = true;
+        //componentEnd[bc - 1] = true;
     }
     assert(bc == vertexCount);
     delete[] visit;
@@ -75,6 +76,7 @@ void doReorderBfs() {
 
     eid_t *nextEdgesIds = static_cast<eid_t*>(malloc(sizeof(eid_t) * (vertexCount + 1)));
     Edge *nextEdges = static_cast<Edge*>(malloc(sizeof(Edge) * edgesCount));
+    eid_t *sumEdges = new eid_t[threadsCount];
     nextEdgesIds[0] = 0;
     for (int i = 0; i < threadsCount; ++i) {
         stickThisThreadToCore(i);
@@ -83,7 +85,15 @@ void doReorderBfs() {
         for (vid_t v = vertexBegin; v < vertexEnd; ++v) {
             const vid_t nextv = que[v];
             nextEdgesIds[v + 1] = nextEdgesIds[v] + edgesIds[nextv + 1] - edgesIds[nextv];
+            sumEdges[i] += edgesIds[nextv + 1] - edgesIds[nextv];
         }
+    }
+    std::sort(sumEdges, sumEdges + threadsCount);
+    double disbalanceFactor = double(sumEdges[threadsCount - 1]) / sumEdges[0];
+    if (disbalanceFactor > 1.5) {
+        free(nextEdges);
+        free(nextEdgesIds);
+        goto clean;
     }
 #pragma omp parallel
     {
@@ -100,12 +110,14 @@ void doReorderBfs() {
         }
     }
 
-    free(que);
-    free(rev);
     free(edges);
     free(edgesIds);
     edges = nextEdges;
     edgesIds = nextEdgesIds;
+clean:
+    free(que);
+    free(rev);
+    delete[] sumEdges;
 }
 
 void doReorderSimple() {

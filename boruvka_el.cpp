@@ -357,7 +357,6 @@ bool doAll() {
     aliveComponents = diedComponents;
     if (aliveComponents == 1) {
         updated = 0;
-        //goto force_exit;
     }
 #endif /* USE_SKIP_LAST_ITER */
 
@@ -461,9 +460,6 @@ bool doAll() {
     }
 #endif
 
-#ifdef USE_SKIP_LAST_ITER
-force_exit:
-#endif /* USE_SKIP_LAST_ITER */
     taskResult += tmpTaskResult;
     ++iterationNumber;
     return updated;
@@ -538,7 +534,16 @@ void doReset() {
 }
 
 void doPrepare() {
-    //doReorder();
+#pragma omp parallel for
+    for (vid_t v = 0; v < vertexCount; ++v)
+        sort(edges + edgesIds[v], edges + edgesIds[v + 1], [&](const Edge& a, const Edge& b) -> bool {
+                vid_t va = a.dest;
+                eid_t da = edgesIds[va + 1] - edgesIds[va];
+                vid_t vb = b.dest;
+                eid_t db = edgesIds[vb + 1] - edgesIds[vb];
+                return da < db;
+            });
+    doReorder();
 #ifdef USE_SKIP_LAST_ITER
     aliveComponents = vertexCount;
 #endif /* USE_SKIP_LAST_ITER */
@@ -707,6 +712,7 @@ void init_mst(graph_t *G) {
 }   
 
 void* MST(graph_t *) {
+    memset(times, 0, sizeof(times));
     int64_t prepareTime = -currentNanoTime();
     doReset();
     prepareTime += currentNanoTime();
@@ -749,7 +755,7 @@ void convert_to_output(graph_t *, void* , forest_t *trees_output) {
 }
 
 void finalize_mst(graph_t *) {
-#if 0
+#if 1
     for (int i = 0; i < iterationNumber; ++i) {
         fprintf(stderr, "iteration %2d\n", i);
         for (int j = 0; j < threadsCount; ++j) {

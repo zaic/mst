@@ -52,7 +52,7 @@ void doReorderSimple();
 static void doReorder() {
 #if defined(USE_REORDER_BFS)
     doReorderBfs();
-#elif defined(USE_REDUCTION_SIMPLE)
+#elif defined(USE_REORDER_SIMPLE)
     doReorderSimple();
 #else
     // do nothing
