@@ -107,12 +107,16 @@ bool doAll() {
         rdtsc.start(threadId);
         eid_t se = 0;
         bool outerComps = false;
+        vid_t minv = vertexCount * 2, maxv = 0;
         for (vid_t v = vertexIds[threadId]; v < vertexIds[threadId + 1]; ++v) {
+if (threadId < threadsCount - 1) __builtin_prefetch(edges + startEdgesIds[v + 20]);
             const eid_t edgesStart = startEdgesIds[v];
             const eid_t edgesEnd = edgesIds[v + 1];
             if (edgesStart >= edgesEnd) continue;
             
             const vid_t cv = comp[v];
+            minv = std::min(minv, cv);
+            maxv = std::max(maxv, cv);
             //assert(prevUsedVid <= v && v < lastUsedVid);
             eid_t newEdgesStart = edgesStart;
 #ifdef USE_FAST_REDUCTION
@@ -120,7 +124,7 @@ bool doAll() {
 #endif /* USE_FAST_REDUCTION */
 
 #if 1
-#pragma unroll(4)
+#pragma unroll(2)
             for (; newEdgesStart < edgesEnd; ++newEdgesStart) {
                 const vid_t u = edges[newEdgesStart].dest;
                 const vid_t cu = comp[u];
@@ -164,6 +168,10 @@ bool doAll() {
         }
         haveOuterComps[threadId] = outerComps;
         times[iterationNumber][threadId][0] = rdtsc.end(threadId);
+#pragma omp critical
+        {
+            E(threadId); E(minv); Eo(maxv);
+        }
 #pragma omp barrier
 
         //
@@ -298,7 +306,7 @@ bool doAll() {
             if (best.weight > MAX_WEIGHT) continue;
             vid_t oc = best.destComp;
 
-            if (comp[oc] == i) {
+            if (comp[oc] == i) { // TODO simplify
                 if (i < oc) {
                     comp[i] = i;
 #ifdef USE_COMPRESS
@@ -397,7 +405,7 @@ bool doAll() {
 #pragma omp parallel 
             {
                 const int threadId = omp_get_thread_num();
-                stickThisThreadToCore(threadId);
+                //stickThisThreadToCore(threadId);
                 rdtsc.start(threadId);
 #pragma omp for reduction(+:changed) nowait
                 for (vid_t i = 0; i < vertexCount; ++i) {
@@ -416,7 +424,7 @@ bool doAll() {
 #pragma omp parallel 
         {
             const int threadId = omp_get_thread_num();
-            stickThisThreadToCore(threadId);
+            //stickThisThreadToCore(threadId);
             rdtsc.start(threadId);
 #pragma omp for nowait
             for (vid_t i = 0; i < vertexCount; ++i) {
@@ -548,6 +556,7 @@ void doPrepare() {
                 eid_t da = edgesIds[va + 1] - edgesIds[va];
                 vid_t vb = b.dest;
                 eid_t db = edgesIds[vb + 1] - edgesIds[vb];
+                //return a.weight < b.weight;
                 return da < db;
             });
     doReorder();
@@ -614,15 +623,31 @@ stickThisThreadToCore(omp_get_thread_num());
 #pragma omp barrier
 
 #if 0
-        eid_t degreeEnd = int64_t(edgesCount) * (threadId + 1) / threadsCount;
-        eid_t degreeSum = 0;
+        const int64_t paramA = 10;
+        const int64_t paramB = 1;
+        const int64_t sumAll = paramA * vertexCount + paramB * edgesCount;
+        const int64_t expectedSum = sumAll * (threadId + 1) / threadsCount;
+        //eid_t degreeEnd = int64_t(edgesCount) * (threadId + 1) / threadsCount;
+        //eid_t degreeSum = 0;
+        int64_t currentSum = 0;
         for (vid_t i = 0; i < vertexCount; ++i) {
-            eid_t diff = edgesIds[i + 1] - edgesIds[i];
+            const eid_t diff = edgesIds[i + 1] - edgesIds[i];
+            /*
             degreeSum += diff;
             if (degreeSum >= degreeEnd) {
                 vertexIds[threadId + 1] = i + 1;
                 break;
             }
+            */
+            currentSum += paramA + paramB * diff;
+            if (currentSum >= expectedSum) {
+                vertexIds[threadId + 1] = i + 1;
+                break;
+            }
+        }
+#pragma omp critical
+        {
+            E(threadId); Eo(vertexIds[threadId + 1]);
         }
 #elif 1
         vertexIds[threadId + 1] = int64_t(vertexCount) * (threadId + 1) / threadsCount;
