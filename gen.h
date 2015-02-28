@@ -15,10 +15,11 @@ typedef int64_t eid_t;
 typedef double weight_t;
 typedef uint64_t thread_vector_t;
 
-typedef std::pair<vid_t, vid_t> pvv;
-typedef std::pair<eid_t, int> pei;
+typedef std::pair<eid_t, int>      pei;
+typedef std::pair<eid_t, vid_t>    pev;
+typedef std::pair<vid_t, int>      pvi;
+typedef std::pair<vid_t, vid_t>    pvv;
 typedef std::pair<weight_t, vid_t> pwv;
-typedef std::pair<vid_t, int> pvi;
 
 struct Edge {
     vid_t dest;
@@ -47,6 +48,10 @@ extern const weight_t MAX_WEIGHT;
 void readAll(char *filename);
 void convertAll(graph_t *G);
 
+extern vid_t *rev; // original ordering, required to restore answer
+extern vid_t *que; // original ordering, required to restore answer
+//eid_t *origEdgeIds; // original data
+
 void doReorderBfs();
 void doReorderSimple();
 static void doReorder() {
@@ -55,8 +60,16 @@ static void doReorder() {
 #elif defined(USE_REORDER_SIMPLE)
     doReorderSimple();
 #else
-    // do nothing
+    Eo("no reorder");
+    rev = new vid_t[vertexCount];
+    que = new vid_t[vertexCount];
+#pragma omp parallel for
+    for (vid_t i = 0; i < vertexCount; ++i) rev[i] = que[i] = i;
 #endif
+}
+
+inline eid_t vertexDegree(vid_t v) {
+    return edgesIds[v + 1] - edgesIds[v];
 }
 
 template<typename T>

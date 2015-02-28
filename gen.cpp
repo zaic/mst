@@ -1,11 +1,13 @@
 #include "gen.h"
 #include <set>
 #include <cassert>
+#include <cstring>
 #include <cstdio>
 #include <time.h>
 #include <unistd.h>
 #include <pthread.h>
 #include <algorithm>
+#include <vector>
 #ifdef __clang__
 #include "omp.h"
 #else
@@ -24,6 +26,8 @@ Edge *edges;
 bool *isCoolEdge;
 int threadsCount;
 int iterationNumber;
+vid_t *rev;
+vid_t *que;
 
 //
 // BFS-reorder specific variable
@@ -50,23 +54,54 @@ void doReorderBfs() {
 
     //componentEnd = new bool[vertexCount]();
     bool *visit = new bool[vertexCount]();
-    vid_t *que = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount));
-    vid_t *rev = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount));
+    que = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount));
+    rev = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount));
+    memset(que, 0xc0, sizeof(vid_t) * vertexCount);
+
+    Eo(vertexDegree(0));
+
+    std::vector<pev> largeVertexes;
+    for (vid_t v = 0; v < vertexCount; ++v) if (vertexDegree(v) > 99) {
+        visit[v] = true;
+        //que[v] = v;
+        largeVertexes.push_back(pev(vertexDegree(v), v));
+    }
+    sort(largeVertexes.begin(), largeVertexes.end());
+    const vid_t threadOffset = vertexCount / threadsCount;
+    for (vid_t i = 0; i < largeVertexes.size(); i += threadsCount) {
+        const vid_t from = i;
+        const vid_t to = std::min<vid_t>(largeVertexes.size(), i + threadsCount);
+        std::random_shuffle(largeVertexes.begin() + from, largeVertexes.begin() + to);
+    }
+    for (vid_t i = 0; i < largeVertexes.size(); ++i) {
+        int toThread = i % threadsCount;
+        vid_t toPos = i / threadsCount;
+        vid_t pos = toThread * threadOffset + toPos;
+        assert(que[pos] < 0);
+        assert(pos < vertexCount);
+        que[pos] = largeVertexes[i].second;
+    }
+
     vid_t fr = 0, bc = 0;
     for (vid_t i = 0; i < vertexCount; ++i) if (!visit[i]) {
+        while (bc < vertexCount && que[bc] >= 0) ++bc;
         que[bc++] = i;
+        visit[i] = true;
         while (fr < bc) {
             const vid_t v = que[fr++];
-            visit[v] = true;
             for (eid_t e = edgesIds[v]; e < edgesIds[v + 1]; ++e) {
                 const vid_t u = edges[e].dest;
                 if (visit[u]) continue;
                 visit[u] = true;
+                while (bc < vertexCount && que[bc] >= 0) ++bc;
                 que[bc++] = u;
             }
         }
         //componentEnd[bc - 1] = true;
     }
+    while (bc < vertexCount && que[bc] >= 0) ++bc;
+    E(largeVertexes.size()); Eo(double(largeVertexes.size()) / vertexCount);
+    E(fr); E(bc); Eo(vertexCount);
     assert(bc == vertexCount);
     delete[] visit;
 
@@ -77,6 +112,7 @@ void doReorderBfs() {
     eid_t *nextEdgesIds = static_cast<eid_t*>(malloc(sizeof(eid_t) * (vertexCount + 1)));
     Edge *nextEdges = static_cast<Edge*>(malloc(sizeof(Edge) * edgesCount));
     eid_t *sumEdges = new eid_t[threadsCount];
+    memset(sumEdges, 0, sizeof(eid_t) * threadsCount);
     nextEdgesIds[0] = 0;
     for (int i = 0; i < threadsCount; ++i) {
         stickThisThreadToCore(i);
@@ -90,7 +126,8 @@ void doReorderBfs() {
     }
     std::sort(sumEdges, sumEdges + threadsCount);
     double disbalanceFactor = double(sumEdges[threadsCount - 1]) / sumEdges[0];
-    if (disbalanceFactor > 1.5) {
+    E(sumEdges[0]); E(sumEdges[threadsCount - 1]);Eo(disbalanceFactor);
+    if (disbalanceFactor > 1.5 && false) {
         free(nextEdges);
         free(nextEdgesIds);
         goto clean;
@@ -115,8 +152,8 @@ void doReorderBfs() {
     edges = nextEdges;
     edgesIds = nextEdgesIds;
 clean:
-    free(que);
-    free(rev);
+    //free(que);
+    //free(rev);
     delete[] sumEdges;
 }
 
@@ -124,8 +161,8 @@ void doReorderSimple() {
     stickThisThreadToCore(0);
 
     bool *visit = new bool[vertexCount]();
-    vid_t *que = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount));
-    vid_t *rev = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount));
+    que = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount));
+    rev = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount));
     vid_t pos = 0;
     for (vid_t v = 0; v < vertexCount; ++v) if (!visit[v]) {
         visit[v] = true;
@@ -171,7 +208,7 @@ void doReorderSimple() {
         }
     }
     free(que);
-    free(rev);
+    //free(rev);
     free(edges);
     free(edgesIds);
     edges = nextEdges;
@@ -241,15 +278,16 @@ void convertAll(graph_t *G) {
 #pragma omp parallel
     {
         stickThisThreadToCore(omp_get_thread_num());
-#pragma omp for nowait
+#pragma omp for
         for (vid_t i = 0; i <= vertexCount; ++i)
             edgesIds[i] = static_cast<eid_t>(G->rowsIndices[i]);
-#pragma omp for nowait
-        for (eid_t i = 0; i < edgesCount; ++i) {
-            edges[i].dest = G->endV[i];
-            edges[i].weight = G->weights[i];
-            //allWeight.insert(edges[i].weight);
-        }
+#pragma omp for
+        for (vid_t v = 0; v < vertexCount; ++v)
+            for (eid_t e = edgesIds[v]; e < edgesIds[v + 1]; ++e) {
+                edges[e].dest = G->endV[e];
+                edges[e].weight = G->weights[e];
+                edges[e].origOffset = e - edgesIds[v];
+            }
     }
     //Eo(allWeight.size());
 }

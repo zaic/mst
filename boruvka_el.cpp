@@ -56,6 +56,9 @@ vid_t lastUsedVid;
 vid_t prevUsedVid;
 #endif /* USE_COMPRESS */
 
+//Stat<vid_t> actulVers;
+//Stat<eid_t> less010, more010;
+
 
 
 bool doAll() {
@@ -117,6 +120,7 @@ bool doAll() {
 #endif /* USE_FAST_REDUCTION */
 
 #if 1
+#pragma unroll(4)
             for (; newEdgesStart < edgesEnd; ++newEdgesStart) {
                 const vid_t u = edges[newEdgesStart].dest;
                 const vid_t cu = comp[u];
@@ -228,7 +232,7 @@ bool doAll() {
                         updated = 1;
                     }
 
-#pragma ivdep
+//#pragma ivdep
                     for (int j = 0; j < threadsCount; ++j) if (haveResult & bit<thread_vector_t>(j)) {
                         localResult[j][i].weight = MAX_WEIGHT + 0.1;
                     }
@@ -597,7 +601,7 @@ void doPrepare() {
         }
 #pragma omp barrier
 
-#if 1
+#if 0
         eid_t degreeEnd = int64_t(edgesCount) * (threadId + 1) / threadsCount;
         eid_t degreeSum = 0;
         for (vid_t i = 0; i < vertexCount; ++i) {
@@ -608,7 +612,7 @@ void doPrepare() {
                 break;
             }
         }
-#elif 0
+#elif 1
         vertexIds[threadId + 1] = int64_t(vertexCount) * (threadId + 1) / threadsCount;
 #else
         const eid_t degreeEnd = int64_t(edgesCount) * (threadId + 1) / threadsCount;
@@ -640,8 +644,7 @@ void doPrepare() {
         for (vid_t i = vertexIds[threadId]; i < vertexIds[threadId + 1]; ++i) {
             const eid_t startEdge = edgesIds[i];
             const eid_t endEdge = edgesIds[i + 1];
-            for (eid_t e = startEdge; e < endEdge; ++e)
-                edges[e].origOffset = e - startEdge;
+            //for (eid_t e = startEdge; e < endEdge; ++e) edges[e].origOffset = e - startEdge;
             sort(edges + startEdge, edges + endEdge, EdgeWeightCmp());
             startEdgesIds[i] = edgesIds[i];
         }
@@ -677,7 +680,7 @@ int main(int argc, char *argv[]) {
     prepareTime += currentNanoTime();
 
     int64_t calcTime;
-    for (int i = 0; i < 10; ++i) {
+    for (int i = 0; i < 1; ++i) {
         calcTime = -currentNanoTime();
         doReset();
         while (doAll());
@@ -688,7 +691,7 @@ int main(int argc, char *argv[]) {
 
     fprintf(stderr, "%.3lf\n%.3lf\n", double(prepareTime) / 1e9, double(calcTime) / 1e9);
 
-#if 0
+#if 1
     for (int i = 0; i < iterationNumber; ++i) {
         fprintf(stderr, "iteration %2d\n", i);
         for (int j = 0; j < threadsCount; ++j) {
@@ -721,7 +724,7 @@ void* MST(graph_t *) {
     return NULL;
 }
 
-void convert_to_output(graph_t *, void* , forest_t *trees_output) {
+void convert_to_output(graph_t *G, void* , forest_t *trees_output) {
     map<vid_t, vector<eid_t>> treesInMap;
     for (vid_t i = 0; i < vertexCount; ++i) if (comp[i] == i) {
         treesInMap[i] = vector<eid_t>();
@@ -736,7 +739,8 @@ void convert_to_output(graph_t *, void* , forest_t *trees_output) {
             if (isCoolEdge[e]) {
                 vid_t to = comp[edges[e].dest];
                 sum += edges[e].weight;
-                treesInMap[to].push_back(startEdge + edges[e].origOffset);
+                //treesInMap[to].push_back(startEdge + edges[e].origOffset);
+                treesInMap[to].push_back(G->rowsIndices[que[v]] + edges[e].origOffset);
             }
         }
     }
