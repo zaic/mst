@@ -58,9 +58,9 @@ void doReorderBfs() {
     rev = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount));
     memset(que, 0xc0, sizeof(vid_t) * vertexCount);
 
-    Eo(vertexDegree(0));
-
+    Eo(vertexDegree(0)); // TODO read below
     std::vector<pev> largeVertexes;
+#if 1
     for (vid_t v = 0; v < vertexCount; ++v) if (vertexDegree(v) > 99) {
         visit[v] = true;
         //que[v] = v;
@@ -74,16 +74,25 @@ void doReorderBfs() {
         std::random_shuffle(largeVertexes.begin() + from, largeVertexes.begin() + to);
     }
     for (vid_t i = 0; i < largeVertexes.size(); ++i) {
-        int toThread = i % threadsCount;
+        int toThread = i % threadsCount + 1;
         vid_t toPos = i / threadsCount;
-        vid_t pos = toThread * threadOffset + toPos;
+        vid_t pos = toThread * threadOffset - 1 - toPos;
         assert(que[pos] < 0);
         assert(pos < vertexCount);
         que[pos] = largeVertexes[i].second;
     }
+#endif
+
+    std::vector<vid_t> vertexByDegree(vertexCount, 0);
+    std::iota(vertexByDegree.begin(), vertexByDegree.end(), 0);
+    std::sort(vertexByDegree.begin(), vertexByDegree.end(), [&](vid_t a, vid_t b) {
+            return vertexDegree(a) < vertexDegree(b);
+            });
 
     vid_t fr = 0, bc = 0;
-    for (vid_t i = 0; i < vertexCount; ++i) if (!visit[i]) {
+    for (vid_t ii = 0; ii < vertexCount; ++ii) { // start from vertex with lower degree
+        vid_t i = vertexByDegree[ii];
+        if (visit[i]) continue;
         while (bc < vertexCount && que[bc] >= 0) ++bc;
         que[bc++] = i;
         visit[i] = true;
