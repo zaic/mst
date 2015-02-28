@@ -397,6 +397,7 @@ bool doAll() {
 #pragma omp parallel 
             {
                 const int threadId = omp_get_thread_num();
+                stickThisThreadToCore(threadId);
                 rdtsc.start(threadId);
 #pragma omp for reduction(+:changed) nowait
                 for (vid_t i = 0; i < vertexCount; ++i) {
@@ -415,6 +416,7 @@ bool doAll() {
 #pragma omp parallel 
         {
             const int threadId = omp_get_thread_num();
+            stickThisThreadToCore(threadId);
             rdtsc.start(threadId);
 #pragma omp for nowait
             for (vid_t i = 0; i < vertexCount; ++i) {
@@ -476,6 +478,7 @@ void doReset() {
 #pragma omp parallel
     {
         const int threadId = omp_get_thread_num();
+        stickThisThreadToCore(threadId);
 
 #if 0
 #pragma omp for nowait
@@ -555,8 +558,12 @@ void doPrepare() {
     vertexIds = new vid_t[threadsCount + 1]; // TODO threads & align
     vertexIds[0] = 0;
     isCoolEdge = static_cast<bool*>(malloc(edgesCount));// new bool[edgesCount](); // TODO NUMA
-#pragma omp parallel for
+#pragma omp parallel
+    {
+        stickThisThreadToCore(omp_get_thread_num());
+#pragma omp for
     for (eid_t i = 0; i < edgesCount; ++i) isCoolEdge[i] = false;
+    }
     //memset(isCoolEdge, 0, edgesCount);
 
 #ifdef USE_COMPRESS
@@ -564,10 +571,14 @@ void doPrepare() {
     bestResult = static_cast<Result*>(malloc(sizeof(Result) * vertexCount * 2));
     // comp = new vid_t[vertexCount * 2]; ALLOC
     comp = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount * 2));
-#pragma omp parallel for
+#pragma omp parallel
+    {
+stickThisThreadToCore(omp_get_thread_num());
+#pragma omp for
     for (vid_t i = 0; i < vertexCount; ++i) {
         comp[i] = i;
         //bestResult[i].weight = 0;
+    }
     }
 #pragma omp parallel for
     for (vid_t i = vertexCount; i < vertexCount * 2; ++i) {
@@ -594,6 +605,7 @@ void doPrepare() {
 #pragma omp parallel
     {
         const int threadId = omp_get_thread_num();
+        stickThisThreadToCore(threadId);
         const int curThreadsCount = omp_get_num_threads();
         if (!threadId) {
             threadsCount = curThreadsCount;
@@ -707,7 +719,11 @@ int main(int argc, char *argv[]) {
 }
 #else
 void init_mst(graph_t *G) {   
+#ifndef USE_HYPERTHREADING
     omp_set_num_threads(16);
+#else
+    omp_set_num_threads(32);
+#endif
     convertAll(G);
     warmup();
     doPrepare();
