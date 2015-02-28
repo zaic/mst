@@ -12,15 +12,15 @@ struct Stat {
                 data[i][j] = T();
     }
 
-    void set(int threadId, int iterationNumber, const T& value) {
+    void set(int threadId, const T& value) {
         data[threadId][iterationNumber] = value;
     }
 
-    void add(int threadId, int iterationNumber, const T& value) {
+    void add(int threadId, const T& value) {
         data[threadId][iterationNumber] += value;
     }
 
-    void print(int iterationNumber, int threadsCount, const char *msg, const char *fmt) {
+    void print(const char *msg, const char *fmt) {
         fprintf(stderr, "\n");
         fprintf(stderr, "Stat: %s\n", msg);
         for (int i = 0; i < iterationNumber; ++i) {
