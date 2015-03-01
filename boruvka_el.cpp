@@ -211,12 +211,67 @@ bool doAll() {
         } else {
 
 #if defined(USE_REDUCTION_SIMPLE)
-#pragma omp for reduction(+:updated) nowait
 #ifdef USE_COMPRESS
-            for (vid_t i = prevUsedVid; i < lastUsedVid; ++i) {
+            int localUpdated = 0;
+            const vid_t reduceInterval = lastUsedVid - prevUsedVid;
+            const vid_t reduceFrom = prevUsedVid + int64_t(reduceInterval) * (threadId + 0) / threadsCount;
+            const vid_t reduceTo   = prevUsedVid + int64_t(reduceInterval) * (threadId + 1) / threadsCount;
+//#pragma omp for nowait
+#if 1
+            for (vid_t i = reduceFrom; i < reduceTo; ++i) {
+		    thread_vector_t haveResult = 0;
+		    for (int j = 0; j < threadsCount; ++j)
+			    if (localResult[j][i].weight <= MAX_WEIGHT)
+				    haveResult |= bit<thread_vector_t>(j);
+
+		    int bestThread = -1;
+		    for (int j = 0; j < threadsCount; ++j) if (haveResult & bit<thread_vector_t>(j)) {
+			    if (bestThread == -1 || localResult[j][i].weight < localResult[bestThread][i].weight)
+				    bestThread = j;
+		    }
+
+		    if (bestThread == -1) {
+			    bestResult[i].weight = MAX_WEIGHT + 0.1;
+		    } else {
+			    bestResult[i] = localResult[bestThread][i];
+			    comp[i] = localResult[bestThread][i].destComp;
+			    //isCoolEdge[localResult[bestThread][i].edgeId] = true;
+			    localUpdated = 1;
+		    }
+
+		    //#pragma ivdep
+		    for (int j = 0; j < threadsCount; ++j) if (haveResult & bit<thread_vector_t>(j)) {
+			    localResult[j][i].weight = MAX_WEIGHT + 0.1;
+		    }
+            }
 #else
+	    //memcpy(bestResult + reduceFrom, localResult[threadId] + reduceFrom, sizeof(Result) * (reduceTo - reduceFrom));
+            for (vid_t i = reduceFrom; i < reduceTo; ++i) {
+                bestResult[i] = localResult[threadId][i];
+                if (localResult[threadId][i].weight <= MAX_WEIGHT)
+                    localResult[threadId][i].weight = MAX_WEIGHT + 0.1;
+            }
+
+            for (int t = 0; t < threadsCount; ++t) if (t != threadId) {
+                for (vid_t i = reduceFrom; i < reduceTo; ++i) {
+                    if (localResult[t][i].weight < bestResult[i].weight) {
+                        bestResult[i] = localResult[t][i];
+                    }
+                    localResult[t][i].weight = MAX_WEIGHT + 0.1;
+                }
+            }
+
+            for (vid_t i = reduceFrom; i < reduceTo; ++i) if (bestResult[i].weight <= MAX_WEIGHT) {
+                comp[i] = bestResult[i].destComp;
+                localUpdated = 1;
+            }
+#endif
+
+            if (localUpdated) updated = 1;
+
+#else
+#pragma omp for reduction(+:updated) nowait
             for (vid_t i = 0; i < vertexCount; ++i) {
-#endif /* USE_COMPRESS */
                 if (comp[i] == i) {
                     thread_vector_t haveResult = 0;
                     for (int j = 0; j < threadsCount; ++j)
@@ -238,7 +293,6 @@ bool doAll() {
                         updated = 1;
                     }
 
-//#pragma ivdep
                     for (int j = 0; j < threadsCount; ++j) if (haveResult & bit<thread_vector_t>(j)) {
                         localResult[j][i].weight = MAX_WEIGHT + 0.1;
                     }
@@ -246,7 +300,50 @@ bool doAll() {
                     //bestResult[i].weight = MAX_WEIGHT + 0.1;
                 }
             }
+#endif /* USE_COMPRESS */
 #elif defined(USE_REDUCTION_TREE)
+            int localUpdated = 0;
+            const int threadsPerSocket = threadsCount / 2;
+            const int socketId = threadId / threadsPerSocket;
+            const int threadsFrom = threadsPerSocket * socketId;
+            const int threadsTo = threadsPerSocket * (socketId + 1);
+
+            const vid_t reduceInterval = lastUsedVid - prevUsedVid;
+
+            for (int reductionIter = 0; reductionIter < 2; ++reductionIter) {
+                const int redThreadId = (reductionIter == 0 ? threadId : (threadId + threadsPerSocket) % threadsCount);
+                const vid_t reduceFrom = prevUsedVid + int64_t(reduceInterval) * (redThreadId + 0) / threadsCount;
+                const vid_t reduceTo   = prevUsedVid + int64_t(reduceInterval) * (redThreadId + 1) / threadsCount;
+
+                for (int t = threadsFrom; t < threadsTo; ++t) if (t != threadId) {
+                    for (vid_t i = reduceFrom; i < reduceTo; ++i) {
+                        if (localResult[t][i].weight < localResult[threadId][i].weight) {
+                            localResult[threadId][i] = localResult[t][i];
+                        }
+                        localResult[t][i].weight = MAX_WEIGHT + 0.1;
+                    }
+                }
+            }
+#pragma omp barrier
+            {
+                const vid_t reduceFrom = prevUsedVid + int64_t(reduceInterval) * (threadId + 0) / threadsCount;
+                const vid_t reduceTo   = prevUsedVid + int64_t(reduceInterval) * (threadId + 1) / threadsCount;
+                const int opponentThread = (threadId + threadsPerSocket) % threadsCount;
+                for (vid_t v = reduceFrom; v < reduceTo; ++v) {
+                    if (localResult[threadId][v].weight < localResult[opponentThread][v].weight)
+                        bestResult[v] = localResult[threadId][v];
+                    else
+                        bestResult[v] = localResult[opponentThread][v];
+                    localResult[threadId][v].weight = localResult[opponentThread][v].weight = MAX_WEIGHT + 0.1;
+                    if (bestResult[v].weight <= MAX_WEIGHT) {
+                        comp[v] = bestResult[v].destComp;
+                        localUpdated = 1;
+                    }
+                }
+            }
+            if (localUpdated) updated = 1;
+
+#if 0
             for (int treeIteration = 0; (1 << treeIteration) < threadsCount; treeIteration++) {
                 const int reduceTo = ((threadId >> (treeIteration + 1)) << (treeIteration + 1));
                 const int reduceFrom = reduceTo + (1 << treeIteration);
@@ -276,6 +373,7 @@ bool doAll() {
                     localResult[0][i].weight = MAX_WEIGHT + 0.1;
                 }
             }
+#endif
 #else /* REDUCTION_TYPE */
 #error reduction type should be set
 #endif /* REDUCTION_TYPE */

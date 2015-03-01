@@ -23,7 +23,7 @@ boruvka_simple.out: gen.o boruvka_simple.cpp makefile.h
 	${CXX} ${CXXFLAGS} $^ -o $@
 
 boruvka_el.out: gen.o boruvka_el.cpp makefile.h
-	${CXX} ${CXXFLAGS} -DUSE_FAST_REDUCTION -DUSE_REDUCTION_SIMPLE -DUSE_SKIP_LAST_ITER -DUSE_COMPRESS $^ -o $@
+	${CXX} ${CXXFLAGS} -DUSE_FAST_REDUCTION -DUSE_REDUCTION_TREE -DUSE_SKIP_LAST_ITER -DUSE_COMPRESS $^ -o $@
 
 mst_zaic: GraphHPC/main_zaic.cpp GraphHPC/graph_tools.o boruvka_el.cpp gen.o makefile
 	${CXX} ${CXXFLAGS} -DUSE_FAST_REDUCTION -DUSE_REDUCTION_SIMPLE -DUSE_SKIP_LAST_ITER -DUSE_COMPRESS -DON_DISLAB GraphHPC/main_zaic.cpp GraphHPC/graph_tools.o gen.o -o $@
