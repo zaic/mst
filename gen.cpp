@@ -74,9 +74,9 @@ void doReorderBfs() {
         std::random_shuffle(largeVertexes.begin() + from, largeVertexes.begin() + to);
     }
     for (vid_t i = 0; i < largeVertexes.size(); ++i) {
-        int toThread = i % threadsCount + 1;
+        int toThread = i % threadsCount;
         vid_t toPos = i / threadsCount;
-        vid_t pos = toThread * threadOffset - 1 - toPos;
+        vid_t pos = toThread * threadOffset + toPos;
         assert(que[pos] < 0);
         assert(pos < vertexCount);
         que[pos] = largeVertexes[i].second;
@@ -91,7 +91,7 @@ void doReorderBfs() {
 
     vid_t fr = 0, bc = 0;
     for (vid_t ii = 0; ii < vertexCount; ++ii) { // start from vertex with lower degree
-        vid_t i = vertexByDegree[ii];
+        const vid_t i = vertexByDegree[ii];
         if (visit[i]) continue;
         while (bc < vertexCount && que[bc] >= 0) ++bc;
         que[bc++] = i;
