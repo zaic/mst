@@ -55,6 +55,7 @@ int64_t *generatedComps;
 vid_t lastUsedVid;
 vid_t prevUsedVid;
 #endif /* USE_COMPRESS */
+vid_t compBound[kMaxThreads][16];
 
 //Stat<vid_t> actulVers;
 //Stat<eid_t> less010, more010;
@@ -169,6 +170,8 @@ bool doAll() {
             if (newEdgesStart != edgesStart) startEdgesIds[v] = newEdgesStart;
         }
         haveOuterComps[threadId] = outerComps;
+        compBound[threadId][0] = minv;
+        compBound[threadId][1] = maxv;
         times[iterationNumber][threadId][0] = rdtsc.end(threadId);
 #pragma omp barrier
 
@@ -316,7 +319,9 @@ bool doAll() {
                 const vid_t reduceTo   = prevUsedVid + int64_t(reduceInterval) * (redThreadId + 1) / threadsCount;
 
                 for (int t = threadsFrom; t < threadsTo; ++t) if (t != threadId) {
-                    for (vid_t i = reduceFrom; i < reduceTo; ++i) {
+                    const vid_t tReduceFrom = std::max(reduceFrom, compBound[t][0]);
+                    const vid_t tReduceTo   = std::min(reduceTo,   compBound[t][1] + 1);
+                    for (vid_t i = tReduceFrom; i < tReduceTo; ++i) {
                         if (localResult[t][i].weight < localResult[threadId][i].weight) {
                             localResult[threadId][i] = localResult[t][i];
                         }
@@ -445,7 +450,6 @@ bool doAll() {
                 generatedComps[i] += generatedComps[i - 1];
         }
 #pragma omp barrier
-        if (!threadId) Eo(generatedComps[threadsCount-1]);
 
         //
         // compress component data
@@ -868,6 +872,7 @@ void convert_to_output(graph_t *G, void* , forest_t *trees_output) {
         treesInMap[i] = vector<eid_t>();
     }
     double sum = 0;
+    eid_t lower = 0, higher = 0;
     for (vid_t v = 0; v < vertexCount; ++v) {
         const eid_t startEdge = edgesIds[v];
         const eid_t endEdge = edgesIds[v + 1];
@@ -879,9 +884,14 @@ void convert_to_output(graph_t *G, void* , forest_t *trees_output) {
                 sum += edges[e].weight;
                 //treesInMap[to].push_back(startEdge + edges[e].origOffset);
                 treesInMap[to].push_back(G->rowsIndices[que[v]] + edges[e].origOffset);
+                if (edges[e].weight < 0.1)
+                    ++lower;
+                else
+                    ++higher;
             }
         }
     }
+    //Eo(lower); Eo(higher);
     trees_output->numTrees = treesInMap.size();
     trees_output->numEdges = vertexCount - trees_output->numTrees;
     trees_output->p_edge_list = static_cast<edge_id_t*>(malloc(sizeof(edge_id_t) * 2 * trees_output->numTrees));
