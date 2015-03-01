@@ -67,6 +67,8 @@ bool doAll() {
     int diedComponents = 0; // merge stage
     weight_t tmpTaskResult = 0.0; // merge stage
 
+    const bool usePrefetchStartEdge = (iterationNumber < 3 || double(vertexCount) / generatedComps[threadsCount - 1] > pow(10.0, iterationNumber));
+
 #pragma omp parallel reduction(+:diedComponents) reduction(+:loopsViewEdges) reduction(+:loopsSkipEdges)
     {
         const int threadId = omp_get_thread_num();
@@ -109,7 +111,7 @@ bool doAll() {
         bool outerComps = false;
         vid_t minv = vertexCount * 2, maxv = 0;
         for (vid_t v = vertexIds[threadId]; v < vertexIds[threadId + 1]; ++v) {
-if (threadId < threadsCount - 1) __builtin_prefetch(edges + startEdgesIds[v + 20]);
+            if (usePrefetchStartEdge) __builtin_prefetch(edges + startEdgesIds[v + PREFETCH_START_EDGE]);
             const eid_t edgesStart = startEdgesIds[v];
             const eid_t edgesEnd = edgesIds[v + 1];
             if (edgesStart >= edgesEnd) continue;
@@ -168,10 +170,6 @@ if (threadId < threadsCount - 1) __builtin_prefetch(edges + startEdgesIds[v + 20
         }
         haveOuterComps[threadId] = outerComps;
         times[iterationNumber][threadId][0] = rdtsc.end(threadId);
-#pragma omp critical
-        {
-            E(threadId); E(minv); Eo(maxv);
-        }
 #pragma omp barrier
 
         //
@@ -349,6 +347,7 @@ if (threadId < threadsCount - 1) __builtin_prefetch(edges + startEdgesIds[v + 20
                 generatedComps[i] += generatedComps[i - 1];
         }
 #pragma omp barrier
+        if (!threadId) Eo(generatedComps[threadsCount-1]);
 
         //
         // compress component data
@@ -603,7 +602,7 @@ stickThisThreadToCore(omp_get_thread_num());
 #endif /* USE_COMPRESS */
 
     // startEdgesIds = new eid_t[vertexCount]; ALLOC
-    startEdgesIds = static_cast<eid_t*>(malloc(sizeof(eid_t) * vertexCount));
+    startEdgesIds = static_cast<eid_t*>(malloc(sizeof(eid_t) * (vertexCount + PREFETCH_START_EDGE)));
 #ifdef USE_COMPRESS
     //generatedComps = new vid_t[threadsCount];
     generatedComps = static_cast<int64_t*>(malloc(sizeof(int64_t) * threadsCount));
