@@ -118,7 +118,9 @@ bool doAll() {
             const vid_t vto = (threadId == threadsCount - 1 ? vertexIds[threadsCount] : vertexIds[threadId + 1] * vkf / 100);
             //for (vid_t v = vertexIds[threadId]; v < vertexIds[threadId + 1]; ++v) {
             for (vid_t v = vfrom; v < vto; ++v) {
-                if (usePrefetchStartEdge) __builtin_prefetch(edges + startEdgesIds[v + PREFETCH_START_EDGE]);
+                if (usePrefetchStartEdge) {
+                    __builtin_prefetch(edges + startEdgesIds[v + PREFETCH_START_EDGE]);
+                }
                 const eid_t edgesStart = startEdgesIds[v];
                 const eid_t edgesEnd = edgesIds[v + 1];
 
@@ -133,6 +135,9 @@ bool doAll() {
                     result[v] = Result{edges[edgesStart].weight, u, edgesStart};
 #endif
                     comp[v] = u;
+                    if (comp[v] == v) {
+                        E(v); E(edgesStart); E(edgesEnd); Eo(edges[edgesStart].weight);
+                    }
                     assert(comp[v] != v);
                     //startEdgesIds[v] = edgesStart + 1; // TODO fix minimum edge on first iter
                 }
@@ -140,7 +145,10 @@ bool doAll() {
 
         } else {
             for (vid_t v = vertexIds[threadId]; v < vertexIds[threadId + 1]; ++v) {
-                if (usePrefetchStartEdge) __builtin_prefetch(edges + startEdgesIds[v + PREFETCH_START_EDGE]);
+                if (usePrefetchStartEdge) {
+                    __builtin_prefetch(edges + startEdgesIds[v + PREFETCH_START_EDGE]);
+                    __builtin_prefetch(comp + edges[startEdgesIds[v + PREFETCH_START_EDGE / 2]].dest);
+                }
                 const eid_t edgesStart = startEdgesIds[v];
                 const eid_t edgesEnd = edgesIds[v + 1];
                 if (edgesStart >= edgesEnd) continue;
@@ -654,7 +662,7 @@ void doReset() {
             localResult[threadId][i] = Result{MAX_WEIGHT + 0.1, 0, 0};
 #endif /* USE_COMPRESS */
 
-#if 1 // TODO copy and skip loops
+#if 0 // TODO copy and skip loops
         for (vid_t i = vertexIds[threadId]; i < vertexIds[threadId + 1]; ++i) {
             const eid_t startEdge = edgesIds[i];
             const eid_t endEdge = edgesIds[i + 1];
@@ -731,6 +739,9 @@ stickThisThreadToCore(omp_get_thread_num());
 
     // startEdgesIds = new eid_t[vertexCount]; ALLOC
     startEdgesIds = static_cast<eid_t*>(malloc(sizeof(eid_t) * (vertexCount + PREFETCH_START_EDGE)));
+    for (vid_t i = vertexCount; i < vertexCount + PREFETCH_START_EDGE; ++i) { // TODO allocate on last thread
+	    startEdgesIds[i] = edgesCount-1;
+    }
 #ifdef USE_COMPRESS
     //generatedComps = new vid_t[threadsCount];
     generatedComps = static_cast<int64_t*>(malloc(sizeof(int64_t) * threadsCount));
