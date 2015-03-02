@@ -63,6 +63,7 @@ vid_t compBound[kMaxThreads][16];
 
 
 
+template<int definedIter>
 bool doAll() {
     Eo(iterationNumber);
     int updated = 0; // reduce stage 
@@ -80,7 +81,7 @@ bool doAll() {
         // find min
         // 
         rdtsc.start(threadId);
-        auto result = localResult[threadId];
+        auto result = (definedIter == 0 ? bestResult : localResult[threadId]);
 
 #ifdef USE_SKIP_LOOPS
         if (iterationNumber >= USE_SKIP_LOOPS + 1 && useSkipLoops) {
@@ -109,70 +110,75 @@ bool doAll() {
 #endif /* USE_SKIP_LOOPS */
 
         rdtsc.start(threadId);
-        eid_t se = 0;
         bool outerComps = false;
         vid_t minv = vertexCount * 2, maxv = 0;
-        for (vid_t v = vertexIds[threadId]; v < vertexIds[threadId + 1]; ++v) {
-            if (usePrefetchStartEdge) __builtin_prefetch(edges + startEdgesIds[v + PREFETCH_START_EDGE]);
-            const eid_t edgesStart = startEdgesIds[v];
-            const eid_t edgesEnd = edgesIds[v + 1];
-            if (edgesStart >= edgesEnd) continue;
-            
-            const vid_t cv = comp[v];
-            minv = std::min(minv, cv);
-            maxv = std::max(maxv, cv);
-            //assert(prevUsedVid <= v && v < lastUsedVid);
-            eid_t newEdgesStart = edgesStart;
+        if (definedIter == 0) {
+            const int64_t vkf = 98;
+            const vid_t vfrom = vertexIds[threadId] * vkf / 100;
+            const vid_t vto = (threadId == threadsCount - 1 ? vertexIds[threadsCount] : vertexIds[threadId + 1] * vkf / 100);
+            //for (vid_t v = vertexIds[threadId]; v < vertexIds[threadId + 1]; ++v) {
+            for (vid_t v = vfrom; v < vto; ++v) {
+                if (usePrefetchStartEdge) __builtin_prefetch(edges + startEdgesIds[v + PREFETCH_START_EDGE]);
+                const eid_t edgesStart = startEdgesIds[v];
+                const eid_t edgesEnd = edgesIds[v + 1];
+
+                if (edgesStart >= edgesEnd) {
+                    result[v].weight = MAX_WEIGHT + 0.1;
+                } else {
+                    const vid_t u = edges[edgesStart].dest;
+#ifdef USE_RESULT_VERTEX
+                    result[v] = Result{edges[edgesStart].weight, u, v};
+#else
+                    result[v] = Result{edges[edgesStart].weight, u, edgesStart};
+#endif
+                    comp[v] = u;
+                    assert(comp[v] != v);
+                    //startEdgesIds[v] = edgesStart + 1; // TODO fix minimum edge on first iter
+                }
+            }
+
+        } else {
+            for (vid_t v = vertexIds[threadId]; v < vertexIds[threadId + 1]; ++v) {
+                if (usePrefetchStartEdge) __builtin_prefetch(edges + startEdgesIds[v + PREFETCH_START_EDGE]);
+                const eid_t edgesStart = startEdgesIds[v];
+                const eid_t edgesEnd = edgesIds[v + 1];
+                if (edgesStart >= edgesEnd) continue;
+
+                const vid_t cv = comp[v];
+                minv = std::min(minv, cv);
+                maxv = std::max(maxv, cv);
+                //assert(prevUsedVid <= v && v < lastUsedVid);
+                eid_t newEdgesStart = edgesStart;
 #ifdef USE_FAST_REDUCTION
-            if (cv < vertexIds[threadId] || cv >= vertexIds[threadId + 1]) outerComps = true;
+                if (cv < vertexIds[threadId] || cv >= vertexIds[threadId + 1]) outerComps = true;
 #endif /* USE_FAST_REDUCTION */
 
-#if 1
 #pragma unroll(2)
-            for (; newEdgesStart < edgesEnd; ++newEdgesStart) {
-                const vid_t u = edges[newEdgesStart].dest;
-                const vid_t cu = comp[u];
-                if (cu != cv) break;
-            }
-
-            if (newEdgesStart < edgesEnd) {
-                const weight_t weight = edges[newEdgesStart].weight;
-                if (weight < result[cv].weight) {
+                for (; newEdgesStart < edgesEnd; ++newEdgesStart) {
                     const vid_t u = edges[newEdgesStart].dest;
                     const vid_t cu = comp[u];
+                    if (cu != cv) break;
+                }
+
+                if (newEdgesStart < edgesEnd) {
+                    const weight_t weight = edges[newEdgesStart].weight;
+                    if (weight < result[cv].weight) {
+                        const vid_t u = edges[newEdgesStart].dest;
+                        const vid_t cu = comp[u];
 #ifdef USE_RESULT_VERTEX
-                    result[cv] = Result{edges[newEdgesStart].weight, cu, v};
+                        result[cv] = Result{edges[newEdgesStart].weight, cu, v};
 #else
-                    result[cv] = Result{edges[newEdgesStart].weight, cu, newEdgesStart};
+                        result[cv] = Result{edges[newEdgesStart].weight, cu, newEdgesStart};
 #endif
+                    }
                 }
+
+                if (newEdgesStart != edgesStart) startEdgesIds[v] = newEdgesStart;
             }
-#else
-            weight_t startWeight = edges[edgesStart].weight;
-
-            for (eid_t e = edgesStart; e < edgesEnd; ++e) {
-                weight_t weight = edges[e].weight;
-                if (weight > result[cv].weight) break;
-
-                const vid_t u = edges[e].dest;
-                const vid_t cu = comp[u];
-                if (cu == cv) continue;
-
-                if (weight < result[cv].weight || (weight == result[cv].weight && cu < result[cv].destComp)) {
-                    result[cv] = Result{edges[e].weight, cu, e};
-                }
-                if (weight > startWeight) {
-                    startWeight = weight;
-                    newEdgesStart = e;
-                }
-            }
-#endif
-
-            if (newEdgesStart != edgesStart) startEdgesIds[v] = newEdgesStart;
-        }
-        haveOuterComps[threadId] = outerComps;
-        compBound[threadId][0] = minv;
-        compBound[threadId][1] = maxv;
+            haveOuterComps[threadId] = outerComps;
+            compBound[threadId][0] = minv;
+            compBound[threadId][1] = maxv;
+        } /* definedIter */
         times[iterationNumber][threadId][0] = rdtsc.end(threadId);
 #pragma omp barrier
 
@@ -191,7 +197,10 @@ bool doAll() {
         const bool doFastReduction = false;
 #endif
 
-        if (doFastReduction) {
+        if (definedIter == 0) {
+            if (!threadId) updated = 1;
+
+        } else if (doFastReduction) {
             int localUpdated = 0;
             const vid_t vto = vertexIds[threadId + 1];
             for (vid_t v = vertexIds[threadId]; v < vto; ++v) {
@@ -406,28 +415,54 @@ bool doAll() {
 #else
         for (vid_t i = 0; i < vertexCount; ++i) {
 #endif /* USE_COMPRESS */
-            Result& best = bestResult[i];
-            if (best.weight > MAX_WEIGHT) continue;
-            vid_t oc = best.destComp;
-
-            if (comp[oc] == i && i < oc) { // TODO simplify
-                comp[i] = i;
+            if (definedIter == -1) {
+                const vid_t oc = comp[i];
+                if (oc == i) {
+                    //bestResult[i].weight = MAX_WEIGHT + 0.1;
+                } else {
+                    if (comp[oc] == i && i < oc) {
+                        comp[i] = i;
 #ifdef USE_COMPRESS
-                ++localGeneratedComps;
+                        ++localGeneratedComps;
 #endif /* USE_COMPRESS */
 #ifdef USE_SKIP_LAST_ITER
-                ++diedComponents;
+                        ++diedComponents;
 #endif /* USE_SKIP_LAST_ITER */
-            } else {
-                tmpTaskResult += best.weight;
+                    } else {
 #ifdef USE_RESULT_VERTEX
-                const eid_t edgeId = startEdgesIds[best.from];
-                isCoolEdge[edgeId] = true;
+                        const eid_t edgeId = startEdgesIds[i];
+                        isCoolEdge[edgeId] = true;
 #else
-                isCoolEdge[best.edgeId] = true;
+                        isCoolEdge[best.edgeId] = true;
 #endif /* USE_RESULT_VERTEX */
+                        tmpTaskResult += edges[edgeId].weight;
+                    }
+                    bestResult[i].weight = MAX_DROPPED_WEIGHT; // TODO do memset once ?
+                }
+            } else {
+                Result& best = bestResult[i];
+                if (best.weight > MAX_WEIGHT) continue;
+                vid_t oc = best.destComp;
+
+                if (comp[oc] == i && i < oc) { // TODO simplify
+                    comp[i] = i;
+#ifdef USE_COMPRESS
+                    ++localGeneratedComps;
+#endif /* USE_COMPRESS */
+#ifdef USE_SKIP_LAST_ITER
+                    ++diedComponents;
+#endif /* USE_SKIP_LAST_ITER */
+                } else {
+                    tmpTaskResult += best.weight;
+#ifdef USE_RESULT_VERTEX
+                    const eid_t edgeId = startEdgesIds[best.from];
+                    isCoolEdge[edgeId] = true;
+#else
+                    isCoolEdge[best.edgeId] = true;
+#endif /* USE_RESULT_VERTEX */
+                }
+                bestResult[i].weight = MAX_DROPPED_WEIGHT;
             }
-            bestResult[i].weight = MAX_DROPPED_WEIGHT;
         }
         times[iterationNumber][threadId][2] = rdtsc.end(threadId);
 
@@ -468,38 +503,36 @@ bool doAll() {
     //
 #ifdef USE_COMPRESS
     int changed = 100500;
-    while (changed) {
-        changed = 0;
+    if (definedIter == 0) {
+        do {
+            changed = 0;
 #pragma omp parallel 
-        {
-            const int threadId = omp_get_thread_num();
-            stickThisThreadToCore(threadId);
-            rdtsc.start(threadId);
+            {
+                const int threadId = omp_get_thread_num();
+                rdtsc.start(threadId);
 #pragma omp for reduction(+:changed) nowait
-            for (vid_t i = vertexCount; i < prevUsedVid; ++i) {
-                const vid_t myComp = comp[i];
-                if (myComp == i) continue;
-                const vid_t parentComp = comp[myComp];
-                if (myComp != parentComp) {
-                    comp[i] = parentComp;
-                    changed = 1;
+                for (vid_t i = 0; i < prevUsedVid; ++i) {
+                    const vid_t myComp = comp[i];
+                    if (myComp == i) continue;
+                    const vid_t parentComp = comp[myComp];
+                    if (myComp != parentComp) {
+                        comp[i] = parentComp;
+                        changed = 1;
+                    }
                 }
+                times[iterationNumber][threadId][3] += rdtsc.end(threadId);
             }
-            times[iterationNumber][threadId][3] += rdtsc.end(threadId);
-        }
-    }
-
-    if (!iterationNumber) {
-        changed = 100500;
+        } while (changed);
+        
+    } else {
         while (changed) {
             changed = 0;
 #pragma omp parallel 
             {
                 const int threadId = omp_get_thread_num();
-                //stickThisThreadToCore(threadId);
                 rdtsc.start(threadId);
 #pragma omp for reduction(+:changed) nowait
-                for (vid_t i = 0; i < vertexCount; ++i) {
+                for (vid_t i = vertexCount; i < prevUsedVid; ++i) {
                     const vid_t myComp = comp[i];
                     if (myComp == i) continue;
                     const vid_t parentComp = comp[myComp];
@@ -511,11 +544,10 @@ bool doAll() {
                 times[iterationNumber][threadId][3] += rdtsc.end(threadId);
             }
         }
-    } else {
+
 #pragma omp parallel 
         {
             const int threadId = omp_get_thread_num();
-            //stickThisThreadToCore(threadId);
             rdtsc.start(threadId);
 #pragma omp for nowait
             for (vid_t i = 0; i < vertexCount; ++i) {
@@ -619,11 +651,12 @@ void doReset() {
             localResult[threadId][i] = Result{MAX_WEIGHT + 0.1, 0, 0};
 #endif /* USE_COMPRESS */
 
-#if 0
+#if 1 // TODO copy and skip loops
         for (vid_t i = vertexIds[threadId]; i < vertexIds[threadId + 1]; ++i) {
             const eid_t startEdge = edgesIds[i];
             const eid_t endEdge = edgesIds[i + 1];
             startEdgesIds[i] = edgesIds[i];
+            while (startEdgesIds[i] < endEdge && edges[startEdgesIds[i]].dest == i) ++startEdgesIds[i];
         }
 #else
         memcpy(startEdgesIds + vertexIds[threadId], edgesIds + vertexIds[threadId], sizeof(eid_t) * (vertexIds[threadId + 1] - vertexIds[threadId]));
@@ -775,6 +808,7 @@ stickThisThreadToCore(omp_get_thread_num());
             //for (eid_t e = startEdge; e < endEdge; ++e) edges[e].origOffset = e - startEdge;
             sort(edges + startEdge, edges + endEdge, EdgeWeightCmp());
             startEdgesIds[i] = edgesIds[i];
+            while (startEdgesIds[i] < edgesIds[i + 1] && edges[startEdgesIds[i]].dest == i) ++startEdgesIds[i];
         }
     }
 }
@@ -811,7 +845,10 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < 1; ++i) {
         calcTime = -currentNanoTime();
         doReset();
-        while (doAll());
+        if (doAll<0>()) {
+            while (doAll<1>());
+        }
+        //while (doAll());
         calcTime += currentNanoTime();
     }
 
@@ -851,7 +888,9 @@ void* MST(graph_t *) {
     int64_t prepareTime = -currentNanoTime();
     doReset();
     prepareTime += currentNanoTime();
-    while (doAll());
+    if (doAll<0>())
+        while (doAll<1>());
+    //while (doAll());
     //fprintf(stderr, "prepare time is %.7f\n", double(prepareTime) / 1e9);
     return NULL;
 }
