@@ -88,6 +88,7 @@ int main(int argc, char **argv)
     readGraph(&g, inFilename);
     init_mst(&g);
 
+    //nIters = 1;
     perf = (double *)malloc(nIters * sizeof(double));
     void *result = 0;
 
