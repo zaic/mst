@@ -1,4 +1,5 @@
 #include "gen.h"
+#include <numeric>
 #include <set>
 #include <cassert>
 #include <cstring>
@@ -60,8 +61,10 @@ void doReorderBfs() {
 
     Eo(vertexDegree(0)); // TODO read below
     std::vector<pev> largeVertexes;
+    vid_t cntr = 0;
 #if 1
     for (vid_t v = 0; v < vertexCount; ++v) if (vertexDegree(v) > 99) {
+        ++cntr;
         visit[v] = true;
         //que[v] = v;
         largeVertexes.push_back(pev(vertexDegree(v), v));
@@ -82,6 +85,7 @@ void doReorderBfs() {
         que[pos] = largeVertexes[i].second;
     }
 #endif
+    Eo(cntr);
 
     std::vector<vid_t> vertexByDegree(vertexCount, 0);
     std::iota(vertexByDegree.begin(), vertexByDegree.end(), 0);
