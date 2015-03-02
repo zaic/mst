@@ -1,4 +1,5 @@
 #include "gen.h"
+#include <cmath>
 #include <cassert>
 #include <cstring>
 #include <cstdio>
@@ -397,7 +398,9 @@ bool doAll() {
 #else
         const weight_t MAX_DROPPED_WEIGHT = MAX_WEIGHT + 0.1;
 #endif /* USE_COMPRESS */
+        if (!threadId) Eo(lastUsedVid - prevUsedVid);
 #pragma omp for reduction(+:tmpTaskResult) nowait
+//#pragma omp for nowait 
 #ifdef USE_COMPRESS
         for (vid_t i = prevUsedVid; i < lastUsedVid; ++i) {
 #else
@@ -407,37 +410,24 @@ bool doAll() {
             if (best.weight > MAX_WEIGHT) continue;
             vid_t oc = best.destComp;
 
-            if (comp[oc] == i) { // TODO simplify
-                if (i < oc) {
-                    comp[i] = i;
+            if (comp[oc] == i && i < oc) { // TODO simplify
+                comp[i] = i;
 #ifdef USE_COMPRESS
-                    ++localGeneratedComps;
+                ++localGeneratedComps;
 #endif /* USE_COMPRESS */
 #ifdef USE_SKIP_LAST_ITER
-                    ++diedComponents;
+                ++diedComponents;
 #endif /* USE_SKIP_LAST_ITER */
-                } else {
-                    comp[i] = oc;
-                    tmpTaskResult += best.weight;
-#ifdef USE_RESULT_VERTEX
-                    const eid_t edgeId = startEdgesIds[best.from];
-                    isCoolEdge[edgeId] = true;
-#else
-                    isCoolEdge[best.edgeId] = true;
-#endif /* USE_RESULT_VERTEX */
-                }
-                bestResult[i].weight = MAX_DROPPED_WEIGHT;
             } else {
                 tmpTaskResult += best.weight;
 #ifdef USE_RESULT_VERTEX
-                    const eid_t edgeId = startEdgesIds[best.from];
-                    isCoolEdge[edgeId] = true;
+                const eid_t edgeId = startEdgesIds[best.from];
+                isCoolEdge[edgeId] = true;
 #else
-                    isCoolEdge[best.edgeId] = true;
+                isCoolEdge[best.edgeId] = true;
 #endif /* USE_RESULT_VERTEX */
-                comp[i] = oc;
-                bestResult[i].weight = MAX_DROPPED_WEIGHT;
             }
+            bestResult[i].weight = MAX_DROPPED_WEIGHT;
         }
         times[iterationNumber][threadId][2] = rdtsc.end(threadId);
 
