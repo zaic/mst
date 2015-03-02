@@ -82,6 +82,12 @@ bool doAll() {
         // 
         rdtsc.start(threadId);
         auto result = (definedIter == 0 ? bestResult : localResult[threadId]);
+#ifdef USE_COMPRESS
+        const weight_t MAX_DROPPED_WEIGHT = MAX_WEIGHT + 0.3 * iterationNumber;
+#else
+        const weight_t MAX_DROPPED_WEIGHT = MAX_WEIGHT + 0.1;
+#endif /* USE_COMPRESS */
+
 
 #ifdef USE_SKIP_LOOPS
         if (iterationNumber >= USE_SKIP_LOOPS + 1 && useSkipLoops) {
@@ -129,17 +135,17 @@ bool doAll() {
                     comp[v] = v;
                 } else {
                     const vid_t u = edges[edgesStart].dest;
+                    /*
 #ifdef USE_RESULT_VERTEX
                     result[v] = Result{edges[edgesStart].weight, u, v};
 #else
                     result[v] = Result{edges[edgesStart].weight, u, edgesStart};
 #endif
+*/
+                    result[v].weight = MAX_DROPPED_WEIGHT;
                     comp[v] = u;
-                    if (comp[v] == v) {
-                        E(v); E(edgesStart); E(edgesEnd); Eo(edges[edgesStart].weight);
-                    }
                     assert(comp[v] != v);
-                    //startEdgesIds[v] = edgesStart + 1; // TODO fix minimum edge on first iter
+                    startEdgesIds[v] = edgesStart + 1; // TODO fix start edge on initialization
                 }
             }
 
@@ -411,11 +417,6 @@ bool doAll() {
         //
         rdtsc.start(threadId);
         vid_t localGeneratedComps = 0;
-#ifdef USE_COMPRESS
-        const weight_t MAX_DROPPED_WEIGHT = MAX_WEIGHT + 0.3 * iterationNumber;
-#else
-        const weight_t MAX_DROPPED_WEIGHT = MAX_WEIGHT + 0.1;
-#endif /* USE_COMPRESS */
         if (!threadId) Eo(lastUsedVid - prevUsedVid);
 #pragma omp for reduction(+:tmpTaskResult) nowait
 //#pragma omp for nowait 
@@ -424,7 +425,7 @@ bool doAll() {
 #else
         for (vid_t i = 0; i < vertexCount; ++i) {
 #endif /* USE_COMPRESS */
-            if (definedIter == -1) {
+            if (definedIter == 0) {
                 const vid_t oc = comp[i];
                 if (oc == i) {
                     //bestResult[i].weight = MAX_WEIGHT + 0.1;
@@ -439,7 +440,7 @@ bool doAll() {
 #endif /* USE_SKIP_LAST_ITER */
                     } else {
 #ifdef USE_RESULT_VERTEX
-                        const eid_t edgeId = startEdgesIds[i];
+                        const eid_t edgeId = startEdgesIds[i] - 1;
                         isCoolEdge[edgeId] = true;
 #else
                         isCoolEdge[best.edgeId] = true;
