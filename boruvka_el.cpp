@@ -124,6 +124,7 @@ bool doAll() {
 
                 if (edgesStart >= edgesEnd) {
                     result[v].weight = MAX_WEIGHT + 0.1;
+                    comp[v] = v;
                 } else {
                     const vid_t u = edges[edgesStart].dest;
 #ifdef USE_RESULT_VERTEX
@@ -622,15 +623,17 @@ void doReset() {
 #endif
 
 #ifdef USE_COMPRESS
+    /*
 #pragma omp for nowait
     for (vid_t i = 0; i < vertexCount; ++i) {
         comp[i] = i;
         //bestResult[i].weight = 0;
     }
+    */
 #pragma omp for nowait
     for (vid_t i = vertexCount; i < lastUsedVid; ++i) { // TODO fix len
         comp[i] = i;
-        bestResult[i].weight = 0;
+        bestResult[i].weight = 0; // TODO remove?
     }
 #else
 #pragma omp for nowait
@@ -643,11 +646,11 @@ void doReset() {
         // TODO fix
 #ifdef USE_COMPRESS
 #pragma omp for nowait
-        for (vid_t i = 0; i < lastUsedVid; ++i) // TODO decrase to one?
+        for (vid_t i = vertexCount; i < lastUsedVid; ++i) // TODO decrase to one?
             localResult[threadId][i] = Result{MAX_WEIGHT + 0.1, 0, 0};
 #else
 #pragma omp for nowait
-        for (vid_t i = 0; i < vertexCount; ++i)
+        for (vid_t i = vertexCount; i < vertexCount; ++i)
             localResult[threadId][i] = Result{MAX_WEIGHT + 0.1, 0, 0};
 #endif /* USE_COMPRESS */
 
@@ -842,7 +845,8 @@ int main(int argc, char *argv[]) {
     prepareTime += currentNanoTime();
 
     int64_t calcTime;
-    for (int i = 0; i < 1; ++i) {
+    for (int i = 0; i < 10; ++i) {
+        memset(times, 0, sizeof(times));
         calcTime = -currentNanoTime();
         doReset();
         if (doAll<0>()) {
