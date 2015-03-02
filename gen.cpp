@@ -260,14 +260,24 @@ void readAll(char *filename) {
         fread(edgesIds + vertexBegin, sizeof(eid_t), vertexEnd - vertexBegin, f);
     }
 
+    eid_t loopsCount = 0;
     for (int i = 0; i < threadsCount; ++i) {
         stickThisThreadToCore(i);
-        const int vertexBegin = int64_t(vertexCount) * i / threadsCount;
-        const int vertexEnd   = int64_t(vertexCount) * (i + 1) / threadsCount;
-        const int edgeBegin   = edgesIds[vertexBegin];
-        const int edgeEnd     = edgesIds[vertexEnd];
+        const vid_t vertexBegin = int64_t(vertexCount) * i / threadsCount;
+        const vid_t vertexEnd   = int64_t(vertexCount) * (i + 1) / threadsCount;
+        const eid_t edgeBegin   = edgesIds[vertexBegin];
+        const eid_t edgeEnd     = edgesIds[vertexEnd];
         fread(edges + edgeBegin, sizeof(Edge), edgeEnd - edgeBegin, f);
+        for (vid_t v = vertexBegin; v < vertexEnd; ++v) {
+            for (eid_t e = edgesIds[v]; e < edgesIds[v + 1]; ++e)
+                if (edges[e].dest == v) {
+                    assert(vertexDegree(v) > 1);
+                    edges[e].weight = MAX_WEIGHT;
+                    ++loopsCount;
+                }
+        }
     }
+    Eo(loopsCount);
     fclose(f);
 }
 
@@ -300,6 +310,11 @@ void convertAll(graph_t *G) {
                 edges[e].dest = G->endV[e];
                 edges[e].weight = G->weights[e];
                 edges[e].origOffset = e - edgesIds[v];
+                // remove loops
+                if (edges[e].dest == v) {
+                    assert(vertexDegree(v) > 1);
+                    edges[e].weight = MAX_WEIGHT;
+                }
             }
     }
     //Eo(allWeight.size());
