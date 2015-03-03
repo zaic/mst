@@ -83,10 +83,15 @@ namespace Answer {
 }
 #endif /* USE_ANSWER_IN_VECTOR */
 vid_t compBound[kMaxThreads][16];
+pvv *vertexBound;
 
 //Stat<vid_t> actulVers;
 //Stat<eid_t> less010, more010;
-Stat<vid_t> skipVertxs;
+Stat<vid_t> diedComps;
+Stat<vid_t> catchComps;
+Stat<vid_t> potentComps;
+vid_t maxWindowSize;
+bool useMagic = true;
 
 
 
@@ -98,6 +103,10 @@ bool doAll() {
     weight_t tmpTaskResult = 0.0; // merge stage
 
     const bool usePrefetchStartEdge = (iterationNumber < 3 || double(vertexCount) / generatedComps[threadsCount - 1] > pow(10.0, iterationNumber));
+    if (iterationNumber > 4) useMagic = false; // TODO template parameter
+    if (iterationNumber < 2) useMagic = false;
+    if (iterationNumber == 2 && maxWindowSize < vertexCount / 2) useMagic = true;
+    Eo(useMagic);
 
 #pragma omp parallel reduction(+:diedComponents) reduction(+:loopsViewEdges) reduction(+:loopsSkipEdges)
     {
@@ -118,7 +127,7 @@ bool doAll() {
 
 #ifdef USE_SKIP_LOOPS
         if (iterationNumber >= USE_SKIP_LOOPS + 1 && useSkipLoops) {
-            for (vid_t v = vertexIds[threadId]; v < vertexIds[threadId + 1] - 1; ++v) { // TODO 1
+            for (vid_t v = vertexIds[threadId]; v < vertexIds[threadId + 1] - 1; ++v) {
                 const eid_t edgesStart = startEdgesIds[v];
                 const eid_t edgesEnd = edgesIds[v + 1];
                 if (edgesStart >= edgesEnd) continue;
@@ -146,7 +155,7 @@ bool doAll() {
         bool outerComps = false;
         vid_t minv = vertexCount * 2, maxv = 0;
         if (definedIter == 0) {
-            const int64_t vkf = 98;
+            const int64_t vkf = 98; // TODO fix on SSCA2
             const vid_t vfrom = vertexIds[threadId] * vkf / 100;
             const vid_t vto = (threadId == threadsCount - 1 ? vertexIds[threadsCount] : vertexIds[threadId + 1] * vkf / 100);
             //for (vid_t v = vertexIds[threadId]; v < vertexIds[threadId + 1]; ++v) {
@@ -177,11 +186,27 @@ bool doAll() {
             }
 
         } else {
-            for (vid_t v = vertexIds[threadId]; v < vertexIds[threadId + 1]; ++v) {
+            const vid_t vBegin = vertexIds[threadId], vEnd = vertexIds[threadId + 1];
+            vid_t currCompBegin = vBegin, currCompEnd = vBegin + 1;
+            vid_t currCompValue = comp[vBegin];
+            if (useMagic) {
+                while (currCompBegin > 0 && currCompBegin > currCompEnd - MAGIC_BOUND && comp[currCompBegin - 1] == currCompValue) --currCompBegin;
+            }
+            for (vid_t v = vBegin; v < vEnd; ++v) {
                 if (usePrefetchStartEdge) {
                     __builtin_prefetch(edges + startEdgesIds[v + PREFETCH_START_EDGE]);
-                    __builtin_prefetch(comp + edges[startEdgesIds[v + PREFETCH_START_EDGE / 2]].dest);
+                    if (!useMagic) __builtin_prefetch(comp + edges[startEdgesIds[v + PREFETCH_START_EDGE / 2]].dest); // TODO
                 }
+                if (useMagic) {
+                    if (comp[v] != currCompValue) {
+                        currCompValue = comp[v];
+                        currCompBegin = v;
+                        currCompEnd = v + 1;
+                    }
+                    while (currCompEnd < currCompBegin + MAGIC_BOUND && currCompEnd < vertexCount && comp[currCompEnd] == currCompValue)
+                        ++currCompEnd;
+                }
+
                 const eid_t edgesStart = startEdgesIds[v];
                 const eid_t edgesEnd = edgesIds[v + 1];
                 if (edgesStart >= edgesEnd) continue;
@@ -195,11 +220,28 @@ bool doAll() {
                 if (cv < vertexIds[threadId] || cv >= vertexIds[threadId + 1]) outerComps = true;
 #endif /* USE_FAST_REDUCTION */
 
+                if (useMagic) {
+                    if (currCompBegin <= vertexBound[v].first && vertexBound[v].second < currCompEnd) {
+                        //catchComps.add(threadId, 1);
+                        startEdgesIds[v] = edgesEnd;
+                        continue;
+                    }
+                }
+
+                if (useMagic) {
+                    for (; newEdgesStart < edgesEnd; ++newEdgesStart) {
+                        const vid_t u = edges[newEdgesStart].dest;
+                        if (currCompBegin <= u && u < currCompEnd) continue;
+                        const vid_t cu = comp[u];
+                        if (cu != cv) break;
+                    }
+                } else {
 #pragma unroll(2)
-                for (; newEdgesStart < edgesEnd; ++newEdgesStart) {
-                    const vid_t u = edges[newEdgesStart].dest;
-                    const vid_t cu = comp[u];
-                    if (cu != cv) break;
+                    for (; newEdgesStart < edgesEnd; ++newEdgesStart) {
+                        const vid_t u = edges[newEdgesStart].dest;
+                        const vid_t cu = comp[u];
+                        if (cu != cv) break;
+                    }
                 }
 
                 if (newEdgesStart < edgesEnd) {
@@ -647,7 +689,7 @@ bool doAll() {
 void doReset() {
     iterationNumber = 0;
     taskResult = 0;
-
+    useMagic = maxWindowSize < vertexCount / 2;
 #ifdef USE_ANSWER_IN_VECTOR
     Answer::reset();
 #endif
@@ -741,6 +783,7 @@ void doPrepare() {
 
     vertexIds = new vid_t[threadsCount + 1]; // TODO threads & align
     vertexIds[0] = 0;
+    vertexBound = static_cast<pvv*>(malloc(sizeof(pvv) * vertexCount));
     isCoolEdge = static_cast<bool*>(malloc(edgesCount));// new bool[edgesCount](); // TODO NUMA
 #pragma omp parallel
     {
@@ -859,7 +902,13 @@ stickThisThreadToCore(omp_get_thread_num());
         for (vid_t i = vertexIds[threadId]; i < vertexIds[threadId + 1]; ++i) {
             const eid_t startEdge = edgesIds[i];
             const eid_t endEdge = edgesIds[i + 1];
-            //for (eid_t e = startEdge; e < endEdge; ++e) edges[e].origOffset = e - startEdge;
+            vid_t minv = vertexCount, maxv = 0;
+            for (eid_t e = startEdge; e < endEdge; ++e) {
+                minv = std::min(minv, edges[e].dest);
+                maxv = std::max(maxv, edges[e].dest);
+            }
+            vertexBound[i] = pvv(minv, maxv);
+            maxWindowSize = std::max(maxWindowSize, maxv - minv);
             sort(edges + startEdge, edges + endEdge, EdgeWeightCmp());
             startEdgesIds[i] = edgesIds[i];
             while (startEdgesIds[i] < edgesIds[i + 1] && edges[startEdgesIds[i]].dest == i) ++startEdgesIds[i];
@@ -896,7 +945,7 @@ int main(int argc, char *argv[]) {
     prepareTime += currentNanoTime();
 
     int64_t calcTime;
-    for (int i = 0; i < 10; ++i) {
+    for (int i = 0; i < 1; ++i) {
         memset(times, 0, sizeof(times));
         calcTime = -currentNanoTime();
         doReset();
@@ -922,6 +971,11 @@ int main(int argc, char *argv[]) {
         }
     }
 #endif
+
+
+    diedComps.print("Died comps:", "%8d ");
+    potentComps.print("Ptnt comps:", "%8d ");
+    catchComps.print("Cthd comps:", "%8d ");
 
     return 0;
 }

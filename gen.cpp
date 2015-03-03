@@ -100,6 +100,7 @@ void doReorderBfs() {
         const vid_t i = vertexByDegree[ii];
         if (visit[i]) continue;
         while (bc < vertexCount && que[bc] >= 0) ++bc;
+#if 0
         que[bc++] = i;
         visit[i] = true;
         while (fr < bc) {
@@ -112,7 +113,28 @@ void doReorderBfs() {
                 que[bc++] = u;
             }
         }
-        //componentEnd[bc - 1] = true;
+#else
+        std::set<vid_t> innerque;
+        innerque.insert(i);
+        while (!innerque.empty()) {
+            const vid_t v = *innerque.begin();
+            innerque.erase(innerque.begin());
+            if (visit[v]) continue;
+            while (bc < vertexCount && que[bc] >= 0) ++bc;
+            que[bc++] = v;
+            visit[v] = true;
+
+            for (eid_t e = edgesIds[v]; e < edgesIds[v + 1]; ++e) {
+                const vid_t u = edges[e].dest;
+                if (visit[u]) continue;
+                visit[u] = true;
+                while (bc < vertexCount && que[bc] >= 0) ++bc;
+                que[bc++] = u;
+                for (eid_t ee = edgesIds[u]; ee < edgesIds[u + 1]; ++ee)
+                    innerque.insert(edges[ee].dest);
+            }
+        }
+#endif
     }
     while (bc < vertexCount && que[bc] >= 0) ++bc;
     E(largeVertexes.size()); Eo(double(largeVertexes.size()) / vertexCount);
