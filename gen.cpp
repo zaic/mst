@@ -29,11 +29,13 @@ int threadsCount;
 int iterationNumber;
 vid_t *rev;
 vid_t *que;
+vid_t *graphEdgesTo;
+weight_t *graphEdgesWeight;
 
 //
 // BFS-reorder specific variable
 //
-bool *componentEnd;
+//bool *componentEnd;
 
 //
 // Edge comparators
@@ -231,6 +233,21 @@ void doReorderSimple() {
 //
 // Read input data
 //
+void initGraphArrays() {
+    graphEdgesTo = static_cast<vid_t*>(malloc(sizeof(vid_t) * edgesCount));
+    graphEdgesWeight = static_cast<weight_t*>(malloc(sizeof(weight_t) * edgesCount));
+#pragma omp parallel
+    {
+        const int threadId = omp_get_num_threads();
+        stickThisThreadToCore(threadId);
+#pragma omp for
+        for (eid_t e = 0; e < edgesCount; ++e) {
+            graphEdgesTo[e] = edges[e].dest;
+            graphEdgesWeight[e] = edges[e].weight;
+        }
+    }
+}
+
 void readAll(char *filename) {
     iterationNumber = 0;
 #pragma omp parallel
@@ -250,8 +267,8 @@ void readAll(char *filename) {
 
     // NUMA-specific part
     // Each core allocate memory and read data, which will processed on this core
-    edgesIds = (eid_t*)malloc(sizeof(eid_t) * (vertexCount + 1));
-    edges = (Edge*)malloc(sizeof(Edge) * (edgesCount));
+    edgesIds = static_cast<eid_t*>(malloc(sizeof(eid_t) * (vertexCount + 1)));
+    edges = static_cast<Edge*>(malloc(sizeof(Edge) * (edgesCount)));
 
     for (int i = 0; i < threadsCount; ++i) {
         stickThisThreadToCore(i);
@@ -279,6 +296,8 @@ void readAll(char *filename) {
     }
     Eo(loopsCount);
     fclose(f);
+
+    initGraphArrays();
 }
 
 void convertAll(graph_t *G) {
@@ -318,6 +337,7 @@ void convertAll(graph_t *G) {
             }
     }
     //Eo(allWeight.size());
+    initGraphArrays();
 }
 
 //

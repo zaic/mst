@@ -56,10 +56,37 @@ int64_t *generatedComps;
 vid_t lastUsedVid;
 vid_t prevUsedVid;
 #endif /* USE_COMPRESS */
+#ifdef USE_ANSWER_IN_VECTOR
+namespace Answer {
+    eid_t **data;
+    vid_t **pos;
+
+    void init() {
+        data = new eid_t*[threadsCount];
+        pos = new vid_t*[threadsCount];
+#pragma omp parallel
+        {
+            const int threadId = omp_get_thread_num();
+            data[threadId] = static_cast<eid_t*>(malloc(sizeof(eid_t) * vertexCount));
+            pos[threadId] = static_cast<vid_t*>(malloc(sizeof(vid_t) * 16));
+            pos[threadId][0] = 0;
+            const int pageSize = 4 * 1024;
+            const int elementsPerPage = pageSize / sizeof(eid_t);
+            for (vid_t i = vertexCount / threadsCount - 1; i >= 0; i -= elementsPerPage)
+                data[threadId][i] = 0;
+        }
+    }
+
+    void reset() {
+        for (int i = 0; i < threadsCount; ++i) pos[i][0] = 0;
+    }
+}
+#endif /* USE_ANSWER_IN_VECTOR */
 vid_t compBound[kMaxThreads][16];
 
 //Stat<vid_t> actulVers;
 //Stat<eid_t> less010, more010;
+Stat<vid_t> skipVertxs;
 
 
 
@@ -415,6 +442,8 @@ bool doAll() {
         //
         // merge components
         //
+        eid_t *mergeData = Answer::data[threadId];
+        vid_t mergePos = Answer::pos[threadId][0];
         rdtsc.start(threadId);
         vid_t localGeneratedComps = 0;
         if (!threadId) Eo(lastUsedVid - prevUsedVid);
@@ -441,13 +470,14 @@ bool doAll() {
                     } else {
 #ifdef USE_RESULT_VERTEX
                         const eid_t edgeId = startEdgesIds[i] - 1;
-                        isCoolEdge[edgeId] = true;
+                        //isCoolEdge[edgeId] = true;
+                        mergeData[mergePos++] = edgeId;
 #else
                         isCoolEdge[best.edgeId] = true;
 #endif /* USE_RESULT_VERTEX */
                         tmpTaskResult += edges[edgeId].weight;
                     }
-                    bestResult[i].weight = MAX_DROPPED_WEIGHT; // TODO do memset once ?
+                    bestResult[i].weight = MAX_DROPPED_WEIGHT; // TODO remove
                 }
             } else {
                 Result& best = bestResult[i];
@@ -466,7 +496,8 @@ bool doAll() {
                     tmpTaskResult += best.weight;
 #ifdef USE_RESULT_VERTEX
                     const eid_t edgeId = startEdgesIds[best.from];
-                    isCoolEdge[edgeId] = true;
+                    //isCoolEdge[edgeId] = true;
+                    mergeData[mergePos++] = edgeId;
 #else
                     isCoolEdge[best.edgeId] = true;
 #endif /* USE_RESULT_VERTEX */
@@ -474,6 +505,7 @@ bool doAll() {
                 bestResult[i].weight = MAX_DROPPED_WEIGHT;
             }
         }
+        Answer::pos[threadId][0] = mergePos;
         times[iterationNumber][threadId][2] = rdtsc.end(threadId);
 
 #ifdef USE_COMPRESS
@@ -616,6 +648,10 @@ void doReset() {
     iterationNumber = 0;
     taskResult = 0;
 
+#ifdef USE_ANSWER_IN_VECTOR
+    Answer::reset();
+#endif
+
 #pragma omp parallel
     {
         const int threadId = omp_get_thread_num();
@@ -625,7 +661,7 @@ void doReset() {
 #pragma omp for nowait
     for (eid_t e = 0; e < edgesCount; ++e)
         isCoolEdge[e] = false;
-#else
+#elif 0
     eid_t startOffset = int64_t(edgesCount) * (threadId + 0) / threadsCount;
     eid_t endOffset   = int64_t(edgesCount) * (threadId + 1) / threadsCount;
     memset(isCoolEdge + startOffset, 0, endOffset - startOffset);
@@ -699,6 +735,9 @@ void doPrepare() {
 #ifdef USE_SKIP_LAST_ITER
     aliveComponents = vertexCount;
 #endif /* USE_SKIP_LAST_ITER */
+#ifdef USE_ANSWER_IN_VECTOR
+    Answer::init();
+#endif
 
     vertexIds = new vid_t[threadsCount + 1]; // TODO threads & align
     vertexIds[0] = 0;
@@ -912,6 +951,14 @@ void* MST(graph_t *) {
 }
 
 void convert_to_output(graph_t *G, void* , forest_t *trees_output) {
+#ifdef USE_ANSWER_IN_VECTOR
+#pragma omp parallel
+    {
+        const int threadId = omp_get_thread_num();
+        for (vid_t i = 0; i < Answer::pos[threadId][0]; ++i)
+            isCoolEdge[Answer::data[threadId][i]] = true;
+    }
+#endif /* USE_ANSWER_IN_VECTOR */
     map<vid_t, vector<eid_t>> treesInMap;
     for (vid_t i = 0; i < vertexCount; ++i) if (comp[i] == i) {
         treesInMap[i] = vector<eid_t>();

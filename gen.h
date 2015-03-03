@@ -40,7 +40,10 @@ extern Edge *edges;
 extern int threadsCount;
 extern int iterationNumber;
 
-extern bool *componentEnd;
+extern vid_t *graphEdgesTo;
+extern weight_t *graphEdgesWeight;
+
+//extern bool *componentEnd;
 extern bool *isCoolEdge;
 
 extern const weight_t MAX_WEIGHT;
