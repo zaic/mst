@@ -41,7 +41,7 @@ struct Result {
 
 Result **localResult, *bestResult;
 
-double times[kMaxThreads][kMaxIterations][40];
+double times[kMaxIterations][kMaxThreads][40];
 
 bool haveOuterComps[kMaxThreads];
 #ifdef USE_SKIP_LOOPS
