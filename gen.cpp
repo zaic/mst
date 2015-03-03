@@ -297,7 +297,7 @@ void readAll(char *filename) {
     Eo(loopsCount);
     fclose(f);
 
-    initGraphArrays();
+//    initGraphArrays();
 }
 
 void convertAll(graph_t *G) {
@@ -337,7 +337,7 @@ void convertAll(graph_t *G) {
             }
     }
     //Eo(allWeight.size());
-    initGraphArrays();
+//    initGraphArrays();
 }
 
 //

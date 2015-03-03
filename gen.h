@@ -48,6 +48,7 @@ extern bool *isCoolEdge;
 
 extern const weight_t MAX_WEIGHT;
 
+void initGraphArrays();
 void readAll(char *filename);
 void convertAll(graph_t *G);
 
