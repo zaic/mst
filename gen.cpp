@@ -334,7 +334,6 @@ void convertAll(graph_t *G) {
 
     //std::set<weight_t> allWeight;
 
-    // TODO NUMA
     vertexCount = G->n;
     edgesCount = G->m;
     edgesIds = (eid_t*)malloc(sizeof(eid_t) * (vertexCount + 1));

@@ -521,14 +521,13 @@ bool doAll() {
                         tmpTaskResult += edges[edgeId].weight;
 #endif /* ON_HOME */
                     }
-                    //bestResult[i].weight = MAX_DROPPED_WEIGHT; // TODO remove
                 }
             } else {
                 Result& best = bestResult[i];
                 if (best.weight > MAX_WEIGHT) continue;
                 vid_t oc = best.destComp;
 
-                if (comp[oc] == i && i < oc) { // TODO simplify
+                if (comp[oc] == i && i < oc) {
                     comp[i] = i;
 #ifdef USE_COMPRESS
                     ++localGeneratedComps;
@@ -601,6 +600,7 @@ bool doAll() {
 #pragma omp for reduction(+:changed) nowait
                 for (vid_t i = 0; i < prevUsedVid; ++i) {
                     const vid_t myComp = comp[i];
+                    __builtin_prefetch(comp + comp[i + PREFETCH_PJ_COMP]);
                     if (myComp == i) continue;
                     const vid_t parentComp = comp[myComp];
                     if (myComp != parentComp) {
