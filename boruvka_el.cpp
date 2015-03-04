@@ -489,8 +489,11 @@ bool doAll() {
         rdtsc.start(threadId);
         vid_t localGeneratedComps = 0;
         if (!threadId) Eo(lastUsedVid - prevUsedVid);
+#ifdef ON_HOME
 #pragma omp for reduction(+:tmpTaskResult) nowait
-//#pragma omp for nowait 
+#else
+#pragma omp for nowait
+#endif /* ON_HOME */
 #ifdef USE_COMPRESS
         for (vid_t i = prevUsedVid; i < lastUsedVid; ++i) {
 #else
@@ -506,9 +509,6 @@ bool doAll() {
 #ifdef USE_COMPRESS
                         ++localGeneratedComps;
 #endif /* USE_COMPRESS */
-#ifdef USE_SKIP_LAST_ITER
-                        ++diedComponents;
-#endif /* USE_SKIP_LAST_ITER */
                     } else {
 #ifdef USE_RESULT_VERTEX
                         const eid_t edgeId = startEdgesIds[i] - 1;
@@ -517,9 +517,11 @@ bool doAll() {
 #else
                         isCoolEdge[best.edgeId] = true;
 #endif /* USE_RESULT_VERTEX */
+#ifdef ON_HOME
                         tmpTaskResult += edges[edgeId].weight;
+#endif /* ON_HOME */
                     }
-                    bestResult[i].weight = MAX_DROPPED_WEIGHT; // TODO remove
+                    //bestResult[i].weight = MAX_DROPPED_WEIGHT; // TODO remove
                 }
             } else {
                 Result& best = bestResult[i];
@@ -531,11 +533,10 @@ bool doAll() {
 #ifdef USE_COMPRESS
                     ++localGeneratedComps;
 #endif /* USE_COMPRESS */
-#ifdef USE_SKIP_LAST_ITER
-                    ++diedComponents;
-#endif /* USE_SKIP_LAST_ITER */
                 } else {
+#ifdef ON_HOME
                     tmpTaskResult += best.weight;
+#endif /* ON_HOME */
 #ifdef USE_RESULT_VERTEX
                     const eid_t edgeId = startEdgesIds[best.from];
                     //isCoolEdge[edgeId] = true;
@@ -547,6 +548,9 @@ bool doAll() {
                 bestResult[i].weight = MAX_DROPPED_WEIGHT;
             }
         }
+#ifdef USE_SKIP_LAST_ITER
+        diedComponents = localGeneratedComps;
+#endif /* USE_SKIP_LAST_ITER */
         Answer::pos[threadId][0] = mergePos;
         times[iterationNumber][threadId][2] = rdtsc.end(threadId);
 
