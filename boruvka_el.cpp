@@ -155,9 +155,14 @@ bool doAll() {
         bool outerComps = false;
         vid_t minv = vertexCount * 2, maxv = 0;
         if (definedIter == 0) {
+#if 0
             const int64_t vkf = 98; // TODO fix on SSCA2
             const vid_t vfrom = vertexIds[threadId] * vkf / 100;
             const vid_t vto = (threadId == threadsCount - 1 ? vertexIds[threadsCount] : vertexIds[threadId + 1] * vkf / 100);
+#else
+            const vid_t vfrom = vertexIds[threadId];
+            const vid_t vto = vertexIds[threadId + 1];
+#endif
             //for (vid_t v = vertexIds[threadId]; v < vertexIds[threadId + 1]; ++v) {
             for (vid_t v = vfrom; v < vto; ++v) {
                 if (usePrefetchStartEdge) {
