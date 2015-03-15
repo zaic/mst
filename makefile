@@ -1,7 +1,7 @@
 #if 0
 CXX=icpc
 CXXFLAGS=-O3 -g -lrt -lpthread -march=native -std=c++11 -Wall -Wextra -Wshadow -Wno-unused-result -fopenmp -DON_NUMA -pg -DUSE_EDGE_STRUCT -DON_HOME -DUSE_REORDER_BFS -DUSE_SKIP_LOOPSq=1 -DUSE_RESULT_VERTEX -DUSE_ANSWER_IN_VECTOR -DPREFETCH_START_EDGE=20 -DMAGIC_BOUND=100 -DPREFETCH_PJ_COMP=20
-EXE=kruskal.out vector_test.out graphviz.out gen_simple.out gen_cube.out turboboost_stub.out reference.out boruvka_simple.out boruvka_el.out boruvka_el_uma.out boruvka_el_seq.out boruvka_al_merge.out boruvka_al_copy_dfs.out boruvka_al_copy_bfs.out boruvka_fl_bfs_list.out boruvka_fl_bfs_vector.out boruvka_fl_pj.out boruvka_el_offset.out boruvka_el.o mst_zaic #mst_zaic_mpi boruvka_el_mpi.o
+EXE=kruskal.out prima.out vector_test.out graphviz.out gen_simple.out gen_cube.out turboboost_stub.out reference.out boruvka_simple.out boruvka_el.out boruvka_el_uma.out boruvka_el_seq.out boruvka_al_merge.out boruvka_al_copy_dfs.out boruvka_al_copy_bfs.out boruvka_fl_bfs_list.out boruvka_fl_bfs_vector.out boruvka_fl_pj.out boruvka_el_offset.out boruvka_el.o mst_zaic #mst_zaic_mpi boruvka_el_mpi.o
 
 all: ${EXE}
 
@@ -20,6 +20,9 @@ reference.out: gen.o reference.cpp makefile.h
 	${CXX} ${CXXFLAGS} $^ -o $@
 
 kruskal.out: gen.o kruskal.cpp makefile.h
+	${CXX} ${CXXFLAGS} $^ -o $@
+
+prima.out: gen.o prima.cpp makefile.h
 	${CXX} ${CXXFLAGS} $^ -o $@
 
 boruvka_simple.out: gen.o boruvka_simple.cpp makefile.h
