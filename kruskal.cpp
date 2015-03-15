@@ -75,10 +75,12 @@ int main(int argc, char *argv[]) {
     timeBuild += currentNanoTime();
     
     printf("%.10lf\n", double(result));
-    fprintf(stderr, "Read time: %.5lf\n", double(timeRead) / 1e6);
-    fprintf(stderr, "Init time: %.5lf\n", double(timeInit) / 1e6);
-    fprintf(stderr, "Sort time: %.5lf\n", double(timeSort) / 1e6);
-    fprintf(stderr, "Bild time: %.5lf\n", double(timeBuild) / 1e6);
+    fprintf(stderr, "Read time: %.5lf\n", double(timeRead) / 1e9);
+    fprintf(stderr, "Init time: %.5lf\n", double(timeInit) / 1e9);
+    fprintf(stderr, "Sort time: %.5lf\n", double(timeSort) / 1e9);
+    fprintf(stderr, "Bild time: %.5lf\n", double(timeBuild) / 1e9);
+    fprintf(stderr, "\n");
+    fprintf(stderr, "%.3lf\n%.3lf\n", double(timeRead + timeInit) / 1e9, double(timeSort + timeBuild) / 1e9);
 
     return 0;
 }
