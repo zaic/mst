@@ -91,11 +91,11 @@ Stat<vid_t> diedComps;
 Stat<vid_t> catchComps;
 Stat<vid_t> potentComps;
 vid_t maxWindowSize;
-bool useMagic = true;
+bool useMagicGlobal = true;
 
 
 
-template<int definedIter>
+template<int definedIter, int useMagic>
 bool doAll() {
     Eo(iterationNumber);
     int updated = 0; // reduce stage 
@@ -103,10 +103,6 @@ bool doAll() {
     weight_t tmpTaskResult = 0.0; // merge stage
 
     const bool usePrefetchStartEdge = (iterationNumber < 3 || double(vertexCount) / generatedComps[threadsCount - 1] > pow(10.0, iterationNumber));
-    if (iterationNumber > 4) useMagic = false; // TODO template parameter
-    if (iterationNumber < 2) useMagic = false;
-    if (iterationNumber == 2 && maxWindowSize < vertexCount / 2) useMagic = true;
-    Eo(useMagic);
 
 #pragma omp parallel reduction(+:diedComponents) reduction(+:loopsViewEdges) reduction(+:loopsSkipEdges)
     {
@@ -698,7 +694,7 @@ bool doAll() {
 void doReset() {
     iterationNumber = 0;
     taskResult = 0;
-    useMagic = maxWindowSize < vertexCount / 2;
+    useMagicGlobal = maxWindowSize < vertexCount / 2;
 #ifdef USE_ANSWER_IN_VECTOR
     Answer::reset();
 #endif
@@ -958,8 +954,11 @@ int main(int argc, char *argv[]) {
         memset(times, 0, sizeof(times));
         calcTime = -currentNanoTime();
         doReset();
-        if (doAll<0>()) {
-            while (doAll<1>());
+        if (doAll<0, 0>()) {
+            while (true) {
+                bool res = (2 <= iterationNumber && iterationNumber <= 4 && useMagicGlobal ? doAll<1, 1>() : doAll<1, 0>());
+                if (!res) break;
+            }
         }
         //while (doAll());
         calcTime += currentNanoTime();
@@ -999,15 +998,21 @@ void init_mst(graph_t *G) {
     warmup();
     doPrepare();
     doReset();
+    doAll<0, 0>();
+    doReset();
 }   
 
 void* MST(graph_t *) {
-    memset(times, 0, sizeof(times));
+    //memset(times, 0, sizeof(times));
     int64_t prepareTime = -currentNanoTime();
     doReset();
     prepareTime += currentNanoTime();
-    if (doAll<0>())
-        while (doAll<1>());
+    if (doAll<0, 0>()) {
+        while (true) {
+            bool res = (2 <= iterationNumber && iterationNumber <= 4 && useMagicGlobal ? doAll<1, 1>() : doAll<1, 0>());
+            if (!res) break;
+        }
+    }
     //while (doAll());
     //fprintf(stderr, "prepare time is %.7f\n", double(prepareTime) / 1e9);
     return NULL;
@@ -1062,7 +1067,7 @@ void convert_to_output(graph_t *G, void* , forest_t *trees_output) {
 }
 
 void finalize_mst(graph_t *) {
-#if 1
+#if 0
     for (int i = 0; i < iterationNumber; ++i) {
         fprintf(stderr, "iteration %2d\n", i);
         for (int j = 0; j < threadsCount; ++j) {
