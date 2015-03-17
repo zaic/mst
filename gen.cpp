@@ -1,4 +1,5 @@
 #include "gen.h"
+#include <queue>
 #include <numeric>
 #include <set>
 #include <cassert>
@@ -114,11 +115,11 @@ void doReorderBfs() {
             }
         }
 #else
-        std::set<vid_t> innerque;
-        innerque.insert(i);
+        std::queue<vid_t> innerque;
+        innerque.push(i);
         while (!innerque.empty()) {
-            const vid_t v = *innerque.begin();
-            innerque.erase(innerque.begin());
+            const vid_t v = innerque.front();
+            innerque.pop();
             if (visit[v]) continue;
             while (bc < vertexCount && que[bc] >= 0) ++bc;
             que[bc++] = v;
@@ -131,7 +132,7 @@ void doReorderBfs() {
                 while (bc < vertexCount && que[bc] >= 0) ++bc;
                 que[bc++] = u;
                 for (eid_t ee = edgesIds[u]; ee < edgesIds[u + 1]; ++ee)
-                    innerque.insert(edges[ee].dest);
+                    innerque.push(edges[ee].dest);
             }
         }
 #endif
