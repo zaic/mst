@@ -82,6 +82,34 @@ namespace Answer {
     }
 }
 #endif /* USE_ANSWER_IN_VECTOR */
+#ifdef USE_REDUCTION_MESSAGES
+namespace Reduction {
+    vector<Result> **messages;
+    vid_t *resultIndex[kMaxThreads];
+    vid_t vertexesPerThread;
+
+    void init() {
+        vertexesPerThread = vertexCount / threadsCount;
+        assert(vertexesPerThread * threadsCount == vertexCount);
+        // TODO fix initializtion on threads
+        for (int i = 0; i < threadsCount; ++i)
+            resultIndex[i] = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount * 2));
+        messages = new vector<Result>*[threadsCount];
+        for (int i = 0; i < threadsCount; ++i) {
+            messages[i] = new vector<Result>[threadsCount];
+        }
+    }
+
+    void reset() {
+        for (int i = 0; i < threadsCount; ++i)
+            for (int j = 0; j < vertexCount * 2; ++j)
+                resultIndex[i][j] = -1;
+        for (int i = 0; i < threadsCount; ++i)
+            for (int j = 0; j < threadsCount; ++j)
+                messages[i][j].clear();
+    }
+}
+#endif /* USE_REDUCTION_MESSAGES */
 vid_t compBound[kMaxThreads][16];
 pvv *vertexBound;
 
@@ -104,10 +132,14 @@ bool doAll() {
 
     const bool usePrefetchStartEdge = (iterationNumber < 3 || double(vertexCount) / generatedComps[threadsCount - 1] > pow(10.0, iterationNumber));
 
-#pragma omp parallel reduction(+:diedComponents) reduction(+:loopsViewEdges) reduction(+:loopsSkipEdges)
+#pragma omp parallel reduction(+:diedComponents) reduction(+:loopsViewEdges) reduction(+:loopsSkipEdges) reduction(+:tmpTaskResult)
     {
         const int threadId = omp_get_thread_num();
         stickThisThreadToCore(threadId);
+
+#ifdef USE_REDUCTION_MESSAGES
+        for (int i = 0; i < threadsCount; ++i) Reduction::messages[threadId][i].clear();
+#endif
 
         //
         // find min
@@ -247,6 +279,28 @@ bool doAll() {
 
                 if (newEdgesStart < edgesEnd) {
                     const weight_t weight = edges[newEdgesStart].weight;
+#ifdef USE_REDUCTION_MESSAGES
+                    const vid_t u = edges[newEdgesStart].dest;
+                    const vid_t cu = comp[u];
+                    //const int threadTo = cv / Reduction::vertexesPerThread; // TODO!!!
+                    int threadTo = 0;
+                    {
+                        const vid_t usedInterval = lastUsedVid - prevUsedVid;
+                        while (true) {
+                            vid_t usedFrom = usedInterval * threadTo / threadsCount;
+                            vid_t usedTo = usedInterval * (threadTo + 1) / threadsCount;
+                            if (prevUsedVid + usedTo > cv) break;
+                            ++threadTo;
+                        }
+                    }
+                    vid_t resultId = Reduction::resultIndex[threadId][cv];
+                    if (resultId == -1) {
+                        Reduction::resultIndex[threadId][cv] = Reduction::messages[threadId][threadTo].size();
+                        Reduction::messages[threadId][threadTo].push_back(Result{edges[newEdgesStart].weight, cu, v});
+                    } else if (weight < Reduction::messages[threadId][threadTo][resultId].weight)  {
+                        Reduction::messages[threadId][threadTo][resultId] = Result{weight, cu, v};
+                    }
+#else /* USE_REDUCTION_MESSAGES */
                     if (weight < result[cv].weight) {
                         const vid_t u = edges[newEdgesStart].dest;
                         const vid_t cu = comp[u];
@@ -254,8 +308,9 @@ bool doAll() {
                         result[cv] = Result{edges[newEdgesStart].weight, cu, v};
 #else
                         result[cv] = Result{edges[newEdgesStart].weight, cu, newEdgesStart};
-#endif
+#endif /* USE_RESULT_VERTEX */
                     }
+#endif /* USE_REDUCTION_MESSAGES */
                 }
 
                 if (newEdgesStart != edgesStart) startEdgesIds[v] = newEdgesStart;
@@ -474,6 +529,27 @@ bool doAll() {
                 }
             }
 #endif
+#elif defined(USE_REDUCTION_MESSAGES)
+#pragma omp for
+            for (int i = prevUsedVid; i < lastUsedVid; ++i) bestResult[i].weight = MAX_WEIGHT + 0.1; // TODO optimize
+            //auto *result = localResult[threadId];
+            // copy local thread result
+            for (const auto& res : Reduction::messages[threadId][threadId]) {
+                const vid_t cv = comp[res.from];
+                comp[cv] = res.destComp;
+                bestResult[cv] = res;
+            }
+            // recieve messages from other threads
+            for (int from = 0; from < threadsCount; ++from) if (from != threadId) {
+                for (const auto& res : Reduction::messages[from][threadId]) {
+                    const vid_t cv = comp[res.from];
+                    if (res.weight < bestResult[cv].weight) {
+                        comp[cv] = res.destComp;
+                        bestResult[cv] = res;
+                        updated = 1;
+                    }
+                }
+            }
 #else /* REDUCTION_TYPE */
 #error reduction type should be set
 #endif /* REDUCTION_TYPE */
@@ -490,8 +566,13 @@ bool doAll() {
         rdtsc.start(threadId);
         vid_t localGeneratedComps = 0;
         if (!threadId) Eo(lastUsedVid - prevUsedVid);
+#ifdef USE_REDUCTION_MESSAGES
+        const vid_t usedVidFrom = prevUsedVid + (lastUsedVid - prevUsedVid) * (threadId + 0) / threadsCount;
+        const vid_t usedVidTo   = prevUsedVid + (lastUsedVid - prevUsedVid) * (threadId + 1) / threadsCount;
+        for (vid_t i = usedVidFrom; i < usedVidTo; ++i) {
+#else
 #ifdef ON_HOME
-#pragma omp for reduction(+:tmpTaskResult) nowait
+#pragma omp for nowait schedule(static)
 #else
 #pragma omp for nowait
 #endif /* ON_HOME */
@@ -500,6 +581,7 @@ bool doAll() {
 #else
         for (vid_t i = 0; i < vertexCount; ++i) {
 #endif /* USE_COMPRESS */
+#endif
             if (definedIter == 0) {
                 const vid_t oc = comp[i];
                 if (oc == i) {
@@ -567,12 +649,22 @@ bool doAll() {
         //
         // compress component data
         //
+        {
         vid_t currentVid = lastUsedVid + (threadId ? generatedComps[threadId - 1] : 0);
+#ifdef USE_REDUCTION_MESSAGES
+        const vid_t usedVidFrom = prevUsedVid + (lastUsedVid - prevUsedVid) * (threadId + 0) / threadsCount;
+        const vid_t usedVidTo   = prevUsedVid + (lastUsedVid - prevUsedVid) * (threadId + 1) / threadsCount;
+        for (vid_t i = usedVidFrom; i < usedVidTo; ++i) if (comp[i] == i && bestResult[i].weight == MAX_DROPPED_WEIGHT) {
+            comp[i] = currentVid++;
+        }
+#else /* USE_REDUCTION_MESSAGES */
 #pragma omp for nowait
         for (vid_t i = prevUsedVid; i < lastUsedVid; ++i) if (comp[i] == i && bestResult[i].weight == MAX_DROPPED_WEIGHT)
             comp[i] = currentVid++;
+#endif /* USE_REDUCTION_MESSAGES */
         assert(currentVid == lastUsedVid + generatedComps[threadId]);
 #endif /* USE_COMPRESS */
+        }
     }
 #ifdef USE_COMPRESS
     prevUsedVid = lastUsedVid;
@@ -697,7 +789,10 @@ void doReset() {
     useMagicGlobal = maxWindowSize < vertexCount / 2;
 #ifdef USE_ANSWER_IN_VECTOR
     Answer::reset();
-#endif
+#endif /* USE_ANSWER_IN_VECTOR */
+#ifdef USE_REDUCTION_MESSAGES
+    Reduction::reset();
+#endif /* USE_REDUCTION_MESSAGES */
 
 #pragma omp parallel
     {
@@ -784,7 +879,10 @@ void doPrepare() {
 #endif /* USE_SKIP_LAST_ITER */
 #ifdef USE_ANSWER_IN_VECTOR
     Answer::init();
-#endif
+#endif /* USE_ANSWER_IN_VECTOR */
+#ifdef USE_REDUCTION_MESSAGES
+    Reduction::init();
+#endif /* USE_REDUCTION_MESSAGES */
 
     vertexIds = new vid_t[threadsCount + 1]; // TODO threads & align
     vertexIds[0] = 0;
