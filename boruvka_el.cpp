@@ -83,8 +83,10 @@ namespace Answer {
 }
 #endif /* USE_ANSWER_IN_VECTOR */
 #ifdef USE_REDUCTION_MESSAGES
+#include "vector.h"
 namespace Reduction {
     vector<Result> **messages;
+    //Vector<Result, 1000, 2, 10> **messages;
     vid_t *resultIndex[kMaxThreads];
     vid_t vertexesPerThread;
 
@@ -95,6 +97,7 @@ namespace Reduction {
         for (int i = 0; i < threadsCount; ++i)
             resultIndex[i] = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount * 2));
         messages = new vector<Result>*[threadsCount];
+        //messages = new Vector<Result, 1000, 2, 10>*[threadsCount];
         for (int i = 0; i < threadsCount; ++i) {
             messages[i] = new vector<Result>[threadsCount];
         }
@@ -137,10 +140,6 @@ bool doAll() {
         const int threadId = omp_get_thread_num();
         stickThisThreadToCore(threadId);
 
-#ifdef USE_REDUCTION_MESSAGES
-        for (int i = 0; i < threadsCount; ++i) Reduction::messages[threadId][i].clear();
-#endif
-
         //
         // find min
         // 
@@ -151,6 +150,11 @@ bool doAll() {
 #else
         const weight_t MAX_DROPPED_WEIGHT = MAX_WEIGHT + 0.1;
 #endif /* USE_COMPRESS */
+
+#ifdef USE_REDUCTION_MESSAGES
+        for (int i = 0; i < threadsCount; ++i) Reduction::messages[threadId][i].clear();
+#endif /* USE_REDUCTION_MESSAGES */
+
 
 
 #ifdef USE_SKIP_LOOPS
@@ -204,13 +208,6 @@ bool doAll() {
                     comp[v] = v;
                 } else {
                     const vid_t u = edges[edgesStart].dest;
-                    /*
-#ifdef USE_RESULT_VERTEX
-                    result[v] = Result{edges[edgesStart].weight, u, v};
-#else
-                    result[v] = Result{edges[edgesStart].weight, u, edgesStart};
-#endif
-*/
                     result[v].weight = MAX_DROPPED_WEIGHT;
                     comp[v] = u;
                     assert(comp[v] != v);
@@ -369,8 +366,6 @@ bool doAll() {
             const vid_t reduceInterval = lastUsedVid - prevUsedVid;
             const vid_t reduceFrom = prevUsedVid + int64_t(reduceInterval) * (threadId + 0) / threadsCount;
             const vid_t reduceTo   = prevUsedVid + int64_t(reduceInterval) * (threadId + 1) / threadsCount;
-//#pragma omp for nowait
-#if 1
             for (vid_t i = reduceFrom; i < reduceTo; ++i) {
 		    thread_vector_t haveResult = 0;
 		    for (int j = 0; j < threadsCount; ++j)
@@ -397,28 +392,6 @@ bool doAll() {
 			    localResult[j][i].weight = MAX_WEIGHT + 0.1;
 		    }
             }
-#else
-	    //memcpy(bestResult + reduceFrom, localResult[threadId] + reduceFrom, sizeof(Result) * (reduceTo - reduceFrom));
-            for (vid_t i = reduceFrom; i < reduceTo; ++i) {
-                bestResult[i] = localResult[threadId][i];
-                if (localResult[threadId][i].weight <= MAX_WEIGHT)
-                    localResult[threadId][i].weight = MAX_WEIGHT + 0.1;
-            }
-
-            for (int t = 0; t < threadsCount; ++t) if (t != threadId) {
-                for (vid_t i = reduceFrom; i < reduceTo; ++i) {
-                    if (localResult[t][i].weight < bestResult[i].weight) {
-                        bestResult[i] = localResult[t][i];
-                    }
-                    localResult[t][i].weight = MAX_WEIGHT + 0.1;
-                }
-            }
-
-            for (vid_t i = reduceFrom; i < reduceTo; ++i) if (bestResult[i].weight <= MAX_WEIGHT) {
-                comp[i] = bestResult[i].destComp;
-                localUpdated = 1;
-            }
-#endif
 
             if (localUpdated) updated = 1;
 
@@ -498,37 +471,6 @@ bool doAll() {
             }
             if (localUpdated) updated = 1;
 
-#if 0
-            for (int treeIteration = 0; (1 << treeIteration) < threadsCount; treeIteration++) {
-                const int reduceTo = ((threadId >> (treeIteration + 1)) << (treeIteration + 1));
-                const int reduceFrom = reduceTo + (1 << treeIteration);
-                const int threadsPerComp = (1 << (treeIteration + 1));
-                const vid_t reduceStartComp = int64_t(vertexCount) * (threadId & ((1 << (treeIteration + 1)) - 1)) / threadsPerComp;
-                vid_t reduceEndCompPre = int64_t(vertexCount) * ((threadId + 1) & ((1 << (treeIteration + 1)) - 1)) / threadsPerComp;
-                const vid_t reduceEndComp = (reduceEndCompPre == 0 ? vertexCount : reduceEndCompPre);
-
-                for (vid_t i = reduceStartComp; i < reduceEndComp; ++i) {
-                    if (comp[i] == i) {
-                        if (localResult[reduceFrom][i] < localResult[reduceTo][i])
-                            localResult[reduceTo][i] = localResult[reduceFrom][i];
-                        localResult[reduceFrom][i].weight = MAX_WEIGHT + 0.1;
-                    }
-                }
-#pragma omp barrier
-            }
-
-#pragma omp for reduction(+:updated) nowait
-            for (vid_t i = 0; i < vertexCount; ++i) {
-                if (comp[i] == i) {
-                    bestResult[i] = localResult[0][i];
-                    if (localResult[0][i].weight <= MAX_WEIGHT) {
-                        comp[i] = localResult[0][i].destComp;
-                        updated = 1;
-                    }
-                    localResult[0][i].weight = MAX_WEIGHT + 0.1;
-                }
-            }
-#endif
 #elif defined(USE_REDUCTION_MESSAGES)
 #pragma omp for
             for (int i = prevUsedVid; i < lastUsedVid; ++i) bestResult[i].weight = MAX_WEIGHT + 0.1; // TODO optimize
