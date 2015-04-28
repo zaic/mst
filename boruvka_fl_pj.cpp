@@ -91,10 +91,12 @@ bool doAll() {
 #endif /* USE_BOUND */
         const vid_t vto = vertexIds[threadId + 1];
         for (vid_t v = vertexIds[threadId]; v < vto; ++v) if (comp[v] == v) {
+#ifdef USE_BOUND
             if (FlData::list[v].size() >= FlData::kVertexBound) {
                 FlData::parallelProcess[threadId].push_back(v);
                 continue;
             }
+#endif /* USE_BOUND */
             weight_t curBestWeight = MAX_WEIGHT + 1e-3;
             eid_t curBestEid = -1;
             
@@ -131,7 +133,9 @@ bool doAll() {
         } else {
             bestEid[v] = -1;
         }
+#ifdef USE_BOUND
         assert(FlData::parallelProcess[threadId].size() < FlData::kBoundQueue);
+#endif /* USE_BOUND */
 
         times[iterationNumber][threadId][0] = rdtsc.end(threadId);
 #pragma omp barrier
@@ -169,7 +173,6 @@ bool doAll() {
             }
             FlData::bestEidPerThread[t][threadId][vid] = curBestEid;
         }
-#endif /* USE_BOUND */
         times[iterationNumber][threadId][1] = rdtsc.end(threadId);
 #pragma omp barrier
         rdtsc.start(threadId);
@@ -188,6 +191,7 @@ bool doAll() {
             bestEid[v] = curBestEid;
             bestComp[v] = (curBestEid == -1 ? -1 : comp[edges[curBestEid].dest]);
         }
+#endif /* USE_BOUND */
 
         times[iterationNumber][threadId][1] += rdtsc.end(threadId);
 
