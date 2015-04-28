@@ -8,10 +8,11 @@
 using namespace std;
 
 vid_t *comp;
+eid_t *startEid;
 
 struct Que {
     weight_t w;
-    vid_t to;
+    vid_t v;
 
     bool operator<(const Que& other) const {
         return w > other.w;
@@ -19,11 +20,12 @@ struct Que {
 };
 
 void addVertex(priority_queue<Que>& que, vid_t v) {
-    for (eid_t e = edgesIds[v]; e < edgesIds[v + 1]; ++e) {
-        vid_t u = edges[e].dest;
-        if (comp[u] == u)
-            que.push(Que{edges[e].weight, u});
-    }
+    const vid_t cv = comp[v];
+    eid_t e = startEid[v];
+    while (e < edgesIds[v + 1] && comp[edges[e].dest] == cv) ++e;
+    startEid[v] = e;
+    if (e == edgesIds[v + 1]) return ;
+    que.push(Que{edges[e].weight, v});
 }
 
 int main(int argc, char *argv[]) {
@@ -38,7 +40,12 @@ int main(int argc, char *argv[]) {
 
     int64_t timeInit = -currentNanoTime();
     comp = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount));
+    startEid = static_cast<eid_t*>(malloc(sizeof(eid_t) * vertexCount));
     iota(comp, comp + vertexCount, 0);
+    for (vid_t v = 0; v < vertexCount; ++v) {
+        sort(edges + edgesIds[v], edges + edgesIds[v + 1], EdgeWeightCmp());
+        startEid[v] = edgesIds[v];
+    }
     timeInit += currentNanoTime();
 
     int64_t timeBuild = -currentNanoTime();
@@ -49,10 +56,15 @@ int main(int argc, char *argv[]) {
         while (!que.empty()) {
             Que best = que.top();
             que.pop();
-            if (comp[best.to] == v) continue;
-            comp[best.to] = v;
-            result += best.w;
-            addVertex(que, best.to);
+            
+            const eid_t e = startEid[best.v];
+            const vid_t u = edges[e].dest;
+            if (comp[u] != v) {
+                comp[u] = v;
+                result += edges[e].weight;
+                addVertex(que, u);
+            }
+            addVertex(que, best.v);
         }
     }
     timeBuild += currentNanoTime();
