@@ -256,7 +256,7 @@ bool doAll() {
                 const eid_t bestPos = curPos[best];
                 const vid_t bestComp = fullComp[i][best];
 
-                //++curPos[best];
+                ++curPos[best];
                 if (curPos[best] < adjacencyLists[bestComp].listSize) {
                     mergeQueue.push(pwv(-adjacencyLists[bestComp].edges[bestPos + 1].weight, best));
                 }
@@ -292,7 +292,7 @@ bool doAll() {
                     mergedList.edges[copyTo].destComp = comp[mergedList.edges[copyTo].destComp];
                     copyTo++;
                 }
-                curPos[best]++;
+                //curPos[best]++;
             }
             assert(copyTo <= mergedList.listSize);
             mergedList.listSize = copyTo;
