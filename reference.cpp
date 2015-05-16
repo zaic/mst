@@ -40,6 +40,8 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     readAll(argv[1]);
+    printf("Vertexes: %lld\n", (long long)(vertexCount));
+    printf("Edges:    %lld\n", (long long)(edgesCount));
 
     int64_t prepareTime = -currentNanoTime();
     vector<BiEdge> es;
