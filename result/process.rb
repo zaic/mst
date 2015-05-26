@@ -2,6 +2,23 @@
 
 require 'set'
 
+def calc_edges_count(graph)
+    type, size = graph.split('_', 2)
+    case type
+    when 'rmat'
+        pow, degree = size.split('_').map(&:to_i)
+        return (2 ** pow) * degree / 2
+    when 'ssca2'
+        size = size.to_i
+        case size
+        when 22
+            return 134_637_804
+        end
+    else
+    end
+    return 0
+end
+
 def parse_times_from_file(filename)
     # get all times values
     times = File.open(filename, 'r').each_line.select{ |s| s =~ /^\d+\.\d{3}\s*$/ }.map{ |s| s.chomp.to_f }
@@ -29,9 +46,27 @@ end
 
 def generate_data(implementation, graph)
     name = "#{implementation}-#{graph}"
+    times = best_times_from_directory(name + '.raw')
+    # print times in sec
     File.open(name + '.txt', 'w') do |f|
-        times = best_times_from_directory(name + '.raw')
         times.each{ |t| f.puts t }
+    end
+
+    # print times in pgfplot format
+    File.open(name + '_time_pgf.txt', 'w') do |f|
+        5.times do |pw|
+            tcount = 1 << pw
+            time = times[pw]
+            f.print "(#{tcount}, #{time}) "
+        end
+    end
+
+    # print performance in mteps
+    edges_count = calc_edges_count(graph)
+    puts "edges count for graph #{graph} is #{edges_count}"
+    File.open(name + '_mteps_plt.txt', 'w') do |f|
+        mteps = times.map{ |t| edges_count.to_f / t / 1e6 }
+        mteps.each{ |p| f.puts p }
     end
 end
 
