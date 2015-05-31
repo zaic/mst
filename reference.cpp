@@ -42,6 +42,15 @@ int main(int argc, char *argv[]) {
     readAll(argv[1]);
     printf("Vertexes: %lld\n", (long long)(vertexCount));
     printf("Edges:    %lld\n", (long long)(edgesCount));
+    vid_t largeCnt = 0;
+    eid_t maxDegree = 0;
+    for (vid_t v = 0; v < vertexCount; ++v) {
+        eid_t degr = edgesIds[v + 1] - edgesIds[v];
+        if (degr > 1000) ++largeCnt;
+        if (degr > maxDegree) maxDegree = degr;
+    }
+    printf("Large vertexes: %d\n", (int)largeCnt);
+    printf("Max degree is %lld\n", maxDegree);
 
     int64_t prepareTime = -currentNanoTime();
     vector<BiEdge> es;
