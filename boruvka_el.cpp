@@ -92,7 +92,7 @@ namespace Reduction {
 
     void init() {
         vertexesPerThread = vertexCount / threadsCount;
-        assert(vertexesPerThread * threadsCount == vertexCount);
+        //assert(vertexesPerThread * threadsCount == vertexCount);
         // TODO fix initializtion on threads
         for (int i = 0; i < threadsCount; ++i)
             resultIndex[i] = static_cast<vid_t*>(malloc(sizeof(vid_t) * vertexCount * 2));
@@ -152,7 +152,11 @@ bool doAll() {
 #endif /* USE_COMPRESS */
 
 #ifdef USE_REDUCTION_MESSAGES
-        for (int i = 0; i < threadsCount; ++i) Reduction::messages[threadId][i].clear();
+        for (int i = 0; i < threadsCount; ++i) {
+            Reduction::messages[threadId][i].clear();
+            Reduction::messages[threadId][i].reserve(vertexCount * 2 / threadsCount / threadsCount);
+        }
+        const int approxCompsPerThread = (lastUsedVid - prevUsedVid) / threadsCount;
 #endif /* USE_REDUCTION_MESSAGES */
 
 
@@ -280,15 +284,14 @@ bool doAll() {
                     const vid_t u = edges[newEdgesStart].dest;
                     const vid_t cu = comp[u];
                     //const int threadTo = cv / Reduction::vertexesPerThread; // TODO!!!
-                    int threadTo = 0;
-                    {
+                    int threadTo = (approxCompsPerThread ? (cv - prevUsedVid) / approxCompsPerThread : 0);
+                    while (true) {
                         const vid_t usedInterval = lastUsedVid - prevUsedVid;
-                        while (true) {
-                            vid_t usedFrom = usedInterval * threadTo / threadsCount;
-                            vid_t usedTo = usedInterval * (threadTo + 1) / threadsCount;
-                            if (prevUsedVid + usedTo > cv) break;
-                            ++threadTo;
-                        }
+                        vid_t usedFrom = usedInterval * threadTo / threadsCount;
+                        vid_t usedTo = usedInterval * (threadTo + 1) / threadsCount;
+                        if (prevUsedVid + usedFrom > cv) --threadTo;
+                        else if (prevUsedVid + usedTo <= cv) ++threadTo;
+                        else break;
                     }
                     vid_t resultId = Reduction::resultIndex[threadId][cv];
                     if (resultId == -1) {
