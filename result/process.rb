@@ -7,6 +7,7 @@ def calc_edges_count(graph)
     case type
     when 'rmat'
         pow, degree = size.split('_').map(&:to_i)
+        degree = 32 unless degree
         return (2 ** pow) * degree / 2
     when 'ssca2'
         size = size.to_i
@@ -64,9 +65,10 @@ def generate_data(implementation, graph)
     # print performance in mteps
     edges_count = calc_edges_count(graph)
     puts "edges count for graph #{graph} is #{edges_count}"
+    th = 1
     File.open(name + '_mteps_plt.txt', 'w') do |f|
         mteps = times.map{ |t| edges_count.to_f / t / 1e6 }
-        mteps.each{ |p| f.puts p }
+        mteps.each{ |p| f.puts "(#{th}, #{p}) "; th *= 2 }
     end
 end
 
