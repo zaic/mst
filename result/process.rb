@@ -8,13 +8,39 @@ def calc_edges_count(graph)
     when 'rmat'
         pow, degree = size.split('_').map(&:to_i)
         degree = 32 unless degree
-        return (2 ** pow) * degree / 2
+        return (2 ** pow) * degree
     when 'ssca2'
         size = size.to_i
         case size
-        when 22
+        when 16 
+            return 2112654
+        when 17 
+            return 4214796
+        when 18 
+            return 8407578
+        when 19 
+            return 16829544
+        when 20 
+            return 33648244
+        when 21 
+            return 67303886
+        when 22 
             return 134_637_804
+        when 23 
+            return 269280292
+        when 24 
+            return 538617818
+        when 25 
+            return 1077003956
         end
+    when 'grid'
+        dims = size.split('x').size
+        case dims
+        when 2
+            return 511936000
+        end
+    when 'randl'
+        return 268435456
     else
     end
     return 0
