@@ -1,0 +1,41 @@
+-rwxr-xr-x 1 root root 17944 Aug 19  2010 /usr/bin/time
+Linux node3 2.6.32-220.el6.x86_64 #1 SMP Tue Dec 6 19:48:22 GMT 2011 x86_64 x86_64 x86_64 GNU/Linux
+LSB Version:	:core-4.0-amd64:core-4.0-noarch:graphics-4.0-amd64:graphics-4.0-noarch:printing-4.0-amd64:printing-4.0-noarch
+Distributor ID:	CentOS
+Description:	CentOS release 6.2 (Final)
+Release:	6.2
+Codename:	Final
+Mon Jun  1 00:48:51 MSK 2015
+             total       used       free     shared    buffers     cached
+Mem:         64325       1379      62945          0          6         43
+-/+ buffers/cache:       1329      62995
+Swap:         1022          0       1022
+Filesystem    Type    Size  Used Avail Use% Mounted on
+/dev/sda1     ext4    110G  3.3G  101G   4% /
+tmpfs        tmpfs     32G     0   32G   0% /dev/shm
+10.64.0.1:/common
+               nfs    439G  234G  183G  57% /common
+10.64.0.1:/opt/software
+               nfs    439G  234G  183G  57% /opt/software
+10.62.12.3:/vol/home1
+               nfs    818G  305G  514G  38% /home1
+10.67.0.1:/opt/basis
+               nfs    439G  234G  183G  57% /opt/basis
+10.62.12.4:/vol/home2
+               nfs     10T  5.0T  5.1T  50% /home2
+10.62.12.4:/vol/home3
+               nfs    2.0T  1.3T  777G  62% /home3
+10.62.12.6:/   nfs     20M   64K   20M   1% /home4
+gen graph
+-rw-r--r-- 1 kalgin ssd 8702976020 Jun  1 00:52 /tmp/data.bin
+-rw-r--r-- 1 kalgin ssd 8.2G Jun  1 00:52 /tmp/data.bin
+Vertexes: 64000000
+Edges:    511936000
+9630327.4698901568
+9630327.4698891845
+9630327.4698890410
+9630327.4698893148
+9630327.4698894322
+9630327.4698892962
+0. Done
+1. Done

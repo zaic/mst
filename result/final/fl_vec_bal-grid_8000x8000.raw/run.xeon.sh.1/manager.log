@@ -1,0 +1,31 @@
+
+***********
+Task started in 1 time of 1 at 01.06.15 00:23:02
+******************* node111 **********************
+node111   Mic status: online online
+mic_status=0
+Stopping puppet agent: [  OK  ]
+Host node111 has been prepared
+error_flag=0
+Preparing nodes for user kalgin
+/usr/runmvs/bin/prepare_nodes '/usr/runmvs/users/kalgin/queue/run.xeon.sh.1'
+Starting task process with pid 20984
+Pid of sleeper is 20985
+Sleeper 20985 started at 01.06.15 00:23:09 for 20 minutes
+Signals set
+manager: process 20984 done at 01.06.15 00:34:43
+Killing sleeper 20985
+Waiting for the end of sleeper
+Sleeper done successfully
+Creating done-file /usr/runmvs/users/kalgin/done/run.xeon.sh.1
+Done-file created successfully
+01.06.15 00:34:43: manager: closing nodes
+close_node: running "/usr/runmvs/bin/close_nodes /usr/runmvs/users/kalgin/queue/run.xeon.sh.1 no"
+Close nodes started
+Executing /usr/runmvs/bin/trycmd 3 /usr/runmvs/bin/cmd 900 /usr/bin/ssh on node node111
+Rsh on node node111 Ok
+close_nodes: node node111 has been successfully freed
+close_node: close_nodes script done
+01.06.15 00:34:51: manager: close_nodes done
+Unlocking nodes ...
+Exiting...
